@@ -50,15 +50,16 @@ class CitizenAgent(mesa.Agent):
         # DLA TESTÓW przemieszczania: losowy sąsiedni węzeł
         if self.current_edge[1] is None:
             # losowy wybór następnego węzła
-            next_node = random.choice(list(self.model.roads.neighbors(self.current_edge[0])))
+            next_node = random.choice(list(self.model.space.get_neighborhood(self.current_edge[0])))
             self.current_edge = (self.current_edge[0], next_node)
             self.progress = 0.0
         
         # Idzie wzdłuż krawędzi
-        edge_length = self.model.roads[self.current_edge[0]][self.current_edge[1]]['length']
+        edge_length = self.model.space.G[self.current_edge[0]][self.current_edge[1]]['length']
         self.progress += self.speed / edge_length
         
         if self.progress >= 1.0:
             # Dotarł do następnego węzła
             self.current_edge = (self.current_edge[1], None)
             self.progress = 0.0
+            self.model.space.move_agent(self, self.current_edge[0])

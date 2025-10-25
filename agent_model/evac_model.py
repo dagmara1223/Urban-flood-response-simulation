@@ -8,7 +8,7 @@ import random
 class TestModel(mesa.Model):
     def __init__(self, n_agents, roads_graph):
         super().__init__()
-        self.roads = roads_graph # Store the road network graph
+        self.space = mesa.space.NetworkGrid(roads_graph) # Create a NetworkGrid based on the road graph
         self.create_agents(n=n_agents)
         self.safety_spot = ["C"]  # Example of a safe spot node
         
@@ -16,9 +16,10 @@ class TestModel(mesa.Model):
         # Create 'n' citizen agents and assign them random starting nodes
         # TODO: Should be changed to realistic start positions
         for i in range(n):
-            start_node = random.choice(list(self.roads.nodes))
+            start_node = random.choice(list(self.space.G.nodes))
             agent = CitizenAgent(self, start_node=start_node)
             self.agents.add(agent)
+            self.space.place_agent(agent, start_node)
 
     def map_depth_to_graph(self):
         '''
@@ -32,9 +33,9 @@ class TestModel(mesa.Model):
         self.visualise_step() # Visualize the current state of the model, just for testing
 
     def visualise_step(self):
-        pos = nx.get_node_attributes(self.roads, "pos")
-        node_colors = ["green" if node in self.safety_spot else "skyblue" for node in self.roads.nodes]
-        nx.draw(self.roads, pos, node_color=node_colors, with_labels=True, node_size=500, font_weight="bold")
+        pos = nx.get_node_attributes(self.space.G, "pos")
+        node_colors = ["green" if node in self.safety_spot else "skyblue" for node in self.space.G.nodes]
+        nx.draw(self.space.G, pos, node_color=node_colors, with_labels=True, node_size=500, font_weight="bold")
 
         # Wizualizacja agentów
         agent_positions_x = []
