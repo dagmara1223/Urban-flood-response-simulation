@@ -1,3 +1,4 @@
+import random
 import mesa
 from enum import Enum
 import numpy as np
@@ -30,15 +31,14 @@ class CitizenAgent(mesa.Agent):
         current-speed (float): Current speed of an agent. Current speed cannot exceed maximum speed. When the agent is flooded or surrounded by too many other agents per grid, its speed decreases.
 
     """
-    def __init__(self, model, max_x: float, max_y: float):
+    def __init__(self, model, start_node):
         super().__init__(model)
-        self.x = np.random.random() * max_x
-        self.max_x = max_x
-        self.y = np.random.random() * max_y
-        self.max_y = max_y
+        self.current_edge = (start_node, None)  # current edge (start_node -> next_node)
+        self.progress = 0.0  # 0 = at start_node, 1 = at next_node
         self.state = CitizenState.SAFE
         self.max_speed = np.random.normal(1.5, 0.3)
-        print(f'I am an agent, hooray x: {self.x} y: {self.y} speed: {self. max_speed}')
+        self.speed = self.max_speed  # current speed
+        print(f'I am an agent {self.unique_id}, hooray location: {self.current_edge} speed: {self.max_speed}')
 
     def update_state(self, water_matrix: np.ndarray):
         pass
@@ -46,45 +46,19 @@ class CitizenAgent(mesa.Agent):
     def evacuate(self):
         pass
 
-class TestModel(mesa.Model):
-    def __init__(self, n_agents, obstacles_matrix: np.ndarray):
-        super().__init__()
-        self.space = mesa.space.ContinuousSpace(50, 50, torus=False)
-        TestModel.create_agents(self, n=n_agents)
-        self.safety_spot = (np.random.random() * 50, np.random.random() * 50)
-        print(f'Safety spot: {self.safety_spot}')
-        self.obstacle_matrix = obstacles_matrix
-
-    def create_agents(self, n: int):
-        for i in range(n):
-            agent = CitizenAgent(self, 50, 50)
-            self.space.place_agent(agent, (agent.x, agent.y))
-
-    def visualise_step(self):
-        positions = [agent.pos for agent in self.space._agent_to_index.keys()]
-        xs, ys = zip(*positions)
-        fig, ax = plt.subplots(figsize=(6, 6))
-        ax.scatter(xs, ys, c="blue", s=30, alpha=0.7)
-        ax.set_xlim(0, 50)
-        ax.set_ylim(0, 50)
-
-        for i in range(self.obstacle_matrix.shape[0]):
-            for j in range(self.obstacle_matrix.shape[1]):
-                if obstacle_matrix[i][j] == 1:
-                    rect = plt.Rectangle((i, j), 1, 1, color="gray")
-                    ax.add_patch(rect)
-
-        ax.set_title("Current map")
-        ax.set_xlabel("X")
-        ax.set_ylabel("Y")
-        ax.grid(True)
-        plt.show()
-
-obstacle_matrix = np.zeros(shape=(50,50))
-for i in range(20):
-    obstacle_matrix[15+i][i] = 1
-    obstacle_matrix [10+i][30] = 1
-model = TestModel(10, obstacle_matrix)
-#for _ in range(100):
-#    model.step()
-model.visualise_step()
+    def step(self):
+        # DLA TESTÓW przemieszczania: losowy sąsiedni węzeł
+        if self.current_edge[1] is None:
+            # losowy wybór następnego węzła
+            next_node = random.choice(list(self.model.roads.neighbors(self.current_edge[0])))
+            self.current_edge = (self.current_edge[0], next_node)
+            self.progress = 0.0
+        
+        # Idzie wzdłuż krawędzi
+        edge_length = self.model.roads[self.current_edge[0]][self.current_edge[1]]['length']
+        self.progress += self.speed / edge_length
+        
+        if self.progress >= 1.0:
+            # Dotarł do następnego węzła
+            self.current_edge = (self.current_edge[1], None)
+            self.progress = 0.0
