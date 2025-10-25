@@ -10,7 +10,7 @@ class TestModel(mesa.Model):
         super().__init__()
         self.space = mesa.space.NetworkGrid(roads_graph) # Create a NetworkGrid based on the road graph
         self.create_agents(n=n_agents)
-        self.safety_spot = ["C"]  # Example of a safe spot node
+        self.safety_spot = [1, 13, 40]  # Example of a safe spot node
         
     def create_agents(self, n: int):
         # Create 'n' citizen agents and assign them random starting nodes
@@ -29,13 +29,23 @@ class TestModel(mesa.Model):
         
     def step(self):
         self.map_depth_to_graph() # Update water depth on graph nodes, not shure if should be done every step
-        self.agents.do("step")
+        for i in range(10): # na razie testowo 10 substeps per step
+            self.agents.do("step")
         self.visualise_step() # Visualize the current state of the model, just for testing
 
     def visualise_step(self):
+        plt.figure(figsize=(10, 10))
+
         pos = nx.get_node_attributes(self.space.G, "pos")
-        node_colors = ["green" if node in self.safety_spot else "skyblue" for node in self.space.G.nodes]
-        nx.draw(self.space.G, pos, node_color=node_colors, with_labels=True, node_size=500, font_weight="bold")
+        safe_nodes = [n for n in self.space.G.nodes if n in self.safety_spot]
+        nx.draw_networkx_nodes(self.space.G, pos, nodelist=safe_nodes, node_size=100, label='Safe Nodes', node_color='green')
+
+        walk_edges = [(u, v) for u, v, d in self.space.G.edges(data=True) if d.get('road_type') in ['walk']]
+        drive_edges = [(u, v) for u, v, d in self.space.G.edges(data=True) if d.get('road_type') in ['drive', 'both']]
+
+        nx.draw_networkx_edges(self.space.G, pos, edgelist=walk_edges, edge_color='blue', width=2, label='Walkable Roads')
+        nx.draw_networkx_edges(self.space.G, pos, edgelist=drive_edges, edge_color='black', width=2, label='Drivable Roads')
+
 
         # Wizualizacja agentów
         agent_positions_x = []
@@ -48,10 +58,10 @@ class TestModel(mesa.Model):
                 y = y0 + (y1 - y0) * agent.progress
             else:
                 x, y = x0, y0
-            agent_positions_x.append(x + np.random.uniform(-0.05, 0.05))  # slight random offset for visibility
-            agent_positions_y.append(y + np.random.uniform(-0.05, 0.05))
+            agent_positions_x.append(x)
+            agent_positions_y.append(y)
 
-        plt.scatter(agent_positions_x, agent_positions_y, c='red', s=200, label='Agents', zorder=2)
+        plt.scatter(agent_positions_x, agent_positions_y, c='red', s=50, label='Agents', zorder=2)
         plt.legend()
         plt.title("Road network with agents")
         plt.show()
@@ -60,17 +70,10 @@ class TestModel(mesa.Model):
 
 def build_example_graph():
     # Tworzenie TESTOWEGO grafu drogowego
-    G = nx.Graph()
-    # Węzły z pozycjami
-    G.add_node("A", pos=(0, 0))
-    G.add_node("B", pos=(2, 0))
-    G.add_node("C", pos=(4, 0))
-    G.add_node("D", pos=(2, 2))
-    # Krawędzie (drogi)
-    G.add_edge("A", "B", length=20) # można dodać więcej atrybutów jak szerokość drogi, max prędkość idk.
-    G.add_edge("B", "C", length=20)
-    G.add_edge("B", "D", length=20)
-    G.add_edge("C", "D", length=30)
+    G = nx.read_graphml("Data/krakow_roads.graphml")
+    G = nx.convert_node_labels_to_integers(G)
+    for n, data in G.nodes(data=True):
+        data['pos'] = (float(data['x']), float(data['y']))
     return G
 
 

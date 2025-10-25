@@ -1,0 +1,5 @@
+mesa
+networkx
+matplotlib
+numpy
+osmnx
