@@ -13,10 +13,13 @@ class CitizenState(Enum):
         SAFE (int): The citizen is in no need of immediate evacuation.
         UNSAFE (int): The citizen is in endangered area and needs to seek an evacuation.
         CRITICALLY_UNSAFE (int): The citizen is in a heavily flooded area and requires assistance to be rescued.
+        RESCUED (int): The citizen has been rescued and is going to a safe location.
     """
     SAFE = 0
     UNSAFE = 1
     CRITICALLY_UNSAFE = 2
+    RESCUED = 3
+
 class CitizenAgent(mesa.Agent):
     """
     Agent model representing the citizens during the flood.
@@ -47,6 +50,9 @@ class CitizenAgent(mesa.Agent):
         pass
 
     def step(self):
+        if self.state == CitizenState.CRITICALLY_UNSAFE or self.state == CitizenState.RESCUED:
+            return  # No action needed
+        
         # DLA TESTÓW przemieszczania: losowy sąsiedni węzeł
         if self.current_edge[1] is None:
             # losowy wybór następnego węzła

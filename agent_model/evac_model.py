@@ -1,20 +1,30 @@
 import mesa
 import numpy as np
 import matplotlib.pyplot as plt
-from citizens.citizen_agent import CitizenAgent
 import networkx as nx
 import random 
+from citizens.citizen_agent import CitizenAgent, CitizenState
+from call_center_agent import CallCenterAgent
+from rescue_agent import RescueAgent
 
 class TestModel(mesa.Model):
-    def __init__(self, n_agents, roads_graph):
+    def __init__(self, n_agents, n_rescue_agents, roads_graph):
         super().__init__()
         self.space = mesa.space.NetworkGrid(roads_graph) # Create a NetworkGrid based on the road graph
-        self.create_agents(n=n_agents)
-        self.safety_spot = [1, 13, 40]  # Example of a safe spot node
-        
-    def create_agents(self, n: int):
+        self.create_agents(n=n_agents, n2=n_rescue_agents)
+        self.call_center = CallCenterAgent(self)
+        self.safety_spot = [n for n in self.space.G.nodes if n in [1, 13, 40]]  # Example of a safe spot node
+
+    def create_agents(self, n: int, n2: int):
         # Create 'n' citizen agents and assign them random starting nodes
         # TODO: Should be changed to realistic start positions
+
+        for i in range(n2):
+            start_node = random.choice(list(self.space.G.nodes))
+            agent = RescueAgent(self, start_node=start_node)
+            self.agents.add(agent)
+            self.space.place_agent(agent, start_node)
+
         for i in range(n):
             start_node = random.choice(list(self.space.G.nodes))
             agent = CitizenAgent(self, start_node=start_node)
@@ -29,6 +39,9 @@ class TestModel(mesa.Model):
         
     def step(self):
         self.map_depth_to_graph() # Update water depth on graph nodes, not shure if should be done every step
+
+        self.call_center.step()
+
         for i in range(10): # na razie testowo 10 substeps per step
             self.agents.do("step")
         self.visualise_step() # Visualize the current state of the model, just for testing
@@ -37,8 +50,7 @@ class TestModel(mesa.Model):
         plt.figure(figsize=(10, 10))
 
         pos = nx.get_node_attributes(self.space.G, "pos")
-        safe_nodes = [n for n in self.space.G.nodes if n in self.safety_spot]
-        nx.draw_networkx_nodes(self.space.G, pos, nodelist=safe_nodes, node_size=100, label='Safe Nodes', node_color='green')
+        nx.draw_networkx_nodes(self.space.G, pos, nodelist=self.safety_spot, node_size=100, label='Safe Nodes', node_color='green')
 
         walk_edges = [(u, v) for u, v, d in self.space.G.edges(data=True) if d.get('road_type') in ['walk']]
         drive_edges = [(u, v) for u, v, d in self.space.G.edges(data=True) if d.get('road_type') in ['drive', 'both']]
@@ -50,7 +62,11 @@ class TestModel(mesa.Model):
         # Wizualizacja agentów
         agent_positions_x = []
         agent_positions_y = []
+        rescue_agents_x = []
+        rescue_agents_y = []
         for agent in self.agents:
+            if not isinstance(agent, (CitizenAgent, RescueAgent)):
+                continue
             x0, y0 = pos[agent.current_edge[0]]
             if agent.current_edge[1] is not None:
                 x1, y1 = pos[agent.current_edge[1]]
@@ -58,10 +74,15 @@ class TestModel(mesa.Model):
                 y = y0 + (y1 - y0) * agent.progress
             else:
                 x, y = x0, y0
+            if isinstance(agent, RescueAgent):
+                rescue_agents_x.append(x)
+                rescue_agents_y.append(y)
+                continue
             agent_positions_x.append(x)
             agent_positions_y.append(y)
 
         plt.scatter(agent_positions_x, agent_positions_y, c='red', s=50, label='Agents', zorder=2)
+        plt.scatter(rescue_agents_x, rescue_agents_y, c='purple', s=50, label='Rescue Agents', zorder=2)
         plt.legend()
         plt.title("Road network with agents")
         plt.show()
@@ -79,11 +100,13 @@ def build_example_graph():
 
 if __name__ == "__main__":
     G = build_example_graph()
-    model = TestModel(n_agents=5, roads_graph=G)
-    model.visualise_step()
+    model = TestModel(n_agents=5, n_rescue_agents=2, roads_graph=G)
 
     for t in range(20):
         print(f"--- Step {t} ---")
         model.step()
         for a in model.agents:
-            print(f"Agent {a.unique_id}: node={a.current_edge[0]}, state={a.state}")
+            if isinstance(a, CitizenAgent):
+                print(f"Agent {a.unique_id}: node={a.current_edge[0]}, state={a.state}")
+            elif isinstance(a, RescueAgent):
+                print(f"RescueAgent {a.unique_id}: node={a.current_edge[0]}, carrying={[c.unique_id for c in a.carrying]}")
