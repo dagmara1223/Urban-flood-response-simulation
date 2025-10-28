@@ -91,7 +91,7 @@ class TestModel(mesa.Model):
 
 def build_example_graph():
     # Tworzenie TESTOWEGO grafu drogowego
-    G = nx.read_graphml("Data/krakow_roads.graphml")
+    G = nx.read_graphml("../Data/krakow_roads.graphml")
     G = nx.convert_node_labels_to_integers(G)
     for n, data in G.nodes(data=True):
         data['pos'] = (float(data['x']), float(data['y']))
