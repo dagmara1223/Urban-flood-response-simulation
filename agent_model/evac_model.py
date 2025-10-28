@@ -31,6 +31,9 @@ class TestModel(mesa.Model):
             self.agents.add(agent)
             self.space.place_agent(agent, start_node)
 
+        plt.ion()
+        self.fig, self.ax = plt.subplots(figsize=(10, 10))
+
     def map_depth_to_graph(self):
         '''
         Maps water depth values to the graph nodes as an attribute.
@@ -47,7 +50,8 @@ class TestModel(mesa.Model):
         self.visualise_step() # Visualize the current state of the model, just for testing
 
     def visualise_step(self):
-        plt.figure(figsize=(10, 10))
+        ax = self.ax
+        ax.clear()
 
         pos = nx.get_node_attributes(self.space.G, "pos")
         nx.draw_networkx_nodes(self.space.G, pos, nodelist=self.safety_spot, node_size=100, label='Safe Nodes', node_color='green')
@@ -85,8 +89,9 @@ class TestModel(mesa.Model):
         plt.scatter(rescue_agents_x, rescue_agents_y, c='purple', s=50, label='Rescue Agents', zorder=2)
         plt.legend()
         plt.title("Road network with agents")
-        plt.show()
 
+        plt.draw()  # Update figure
+        plt.pause(2)
 
 
 def build_example_graph():
