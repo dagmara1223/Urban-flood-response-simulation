@@ -102,3 +102,4 @@ plt.show()
 # ax.set_title("Powierzchnia terenu + woda")
 # plt.show()
 
+
