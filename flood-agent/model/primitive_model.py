@@ -3,6 +3,9 @@ import matplotlib.pyplot as plt
 from time import sleep
 from mpl_toolkits.mplot3d import Axes3D
 import rasterio
+import contextily as ctx
+from rasterio.warp import calculate_default_transform, reproject, Resampling
+from rasterio.mask import mask
 
 """
 Uproszczony model przepływu powierzchniowego.
@@ -63,21 +66,16 @@ def flood_step(height: np.ndarray, water: np.ndarray, k : float = 0.1, rain: flo
     return new_water
 
 
-with rasterio.open('StandardResolution.tiff') as src:
+with rasterio.open('HighResolution.tiff') as src:
     height = src.read(1).astype(float)
     height[height == src.nodata] = np.nan
     height = np.nan_to_num(height, nan=np.nanmin(height))
 
-height = height[800:1000, 900:1100]  # tu można zmieniać
+height = height[600:1100, 600:1100] 
 
 water = np.zeros_like(height)
 water[50:55, 90:95] = 50.0
-# for t in range(20):
-#     water = flood_step(height, water, k=0.12)
-#     if t % 5 == 0:
-#         plt.imshow(water, cmap='Blues', origin='upper')
-#         plt.title(f"Rozlew wody – krok {t}")
-#         plt.pause(0.3)
+
 for t in range(20):
     water = flood_step(height, water, k=0.12)
     if t % 5 == 0:
@@ -88,18 +86,3 @@ for t in range(20):
         plt.colorbar(label="Głębokość wody [m]")
         plt.pause(0.3)
 plt.show()
-
-plt.imshow(height, cmap='terrain', origin='upper')
-plt.imshow(water, cmap='Blues', alpha=0.6, origin='upper', vmin=0, vmax=np.max(water)/3)
-plt.title(f"Rozlew wody na terenie – krok {t}")
-plt.colorbar(label="Głębokość wody [m]")
-plt.show()
-
-# X, Y = np.meshgrid(np.arange(water.shape[0]), np.arange(water.shape[1]))
-# fig = plt.figure(figsize=(7,5))
-# ax = fig.add_subplot(111, projection='3d')
-# ax.plot_surface(X, Y, height + water, cmap='terrain')
-# ax.set_title("Powierzchnia terenu + woda")
-# plt.show()
-
-
