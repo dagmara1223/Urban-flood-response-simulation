@@ -11,67 +11,6 @@ class RescueState:
     CARRYING = 2        # Carrying rescued citizens
 
 
-class CallCenterAgent:
-    """
-    Central coordination unit (not a Mesa agent).
-    Responsibilities:
-    - Identify citizens in critical danger.
-    - Assign available rescue agents to the closest unsafe citizens.
-    - Track rescue states to avoid duplicate assignments.
-    """
-
-    def __init__(self, model):
-        self.model = model
-
-    def collect_unsafe_citizens(self):
-        """Return list of citizens that are critically unsafe."""
-        return [
-            a for a in self.model.agents
-            if isinstance(a, CitizenAgent) and a.state == CitizenState.CRITICALLY_UNSAFE
-        ]
-
-    def assign_rescue_tasks(self):
-        citizens = self.collect_unsafe_citizens()
-        rescuers = [
-            a for a in self.model.agents
-            if isinstance(a, RescueAgent)
-        ]
-
-        for citizen in citizens:
-            # Skip if any rescuer already heading toward this citizen
-            already_assigned = any(
-                r.target == citizen and r.state in [RescueState.ON_MISSION, RescueState.CARRYING]
-                for r in rescuers
-            )
-            if already_assigned:
-                continue
-
-            # Find available rescuers
-            available = [r for r in rescuers if r.state == RescueState.AVAILABLE]
-            if not available:
-                continue
-
-            # Choose the closest rescuer
-            try:
-                closest = min(
-                    available,
-                    key=lambda r: nx.shortest_path_length(
-                        self.model.space.G,
-                        r.current_edge[0],
-                        citizen.current_edge[0],
-                        weight="length",
-                    ),
-                )
-                closest.set_target(citizen)
-                print(f"[CallCenter] Assigned RescueAgent {closest.unique_id} → Citizen {citizen.unique_id}")
-            except nx.NetworkXNoPath:
-                continue
-
-    def step(self):
-        """Execute task assignments each model step."""
-        self.assign_rescue_tasks()
-
-
 class RescueAgent(mesa.Agent):
     """
     Rescue agent representing emergency services (fire, ambulance).
@@ -89,7 +28,8 @@ class RescueAgent(mesa.Agent):
         self.path = []
         self.state = RescueState.AVAILABLE
 
-        print(f"[RescueAgent {self.unique_id}] Ready at node {start_node}")
+        with open(self.model.log_path, "a") as f:
+                    f.write(f"[RescueAgent {self.unique_id}] Ready at node {start_node}\n")
 
     def set_target(self, citizen):
         """Assign a new target (citizen) and compute a path avoiding unsafe roads."""
@@ -106,12 +46,23 @@ class RescueAgent(mesa.Agent):
             if len(path) > 1:
                 self.current_edge = (self.current_edge[0], path[1])
             self.state = RescueState.ON_MISSION
-            print(f"[RescueAgent {self.unique_id}] Safe path to citizen {citizen.unique_id}: {len(path)} steps")
+            with open(self.model.log_path, "a") as f:
+                    f.write(f"[RescueAgent {self.unique_id}] Safe path to citizen {citizen.unique_id}: {len(path)} steps\n")
         except Exception:
-            print(f"[RescueAgent {self.unique_id}] No SAFE path to Citizen {citizen.unique_id}")
-            self.path = []
-            self.target = None
-            self.state = RescueState.AVAILABLE
+            try:
+                path = nx.shortest_path(G, self.current_edge[0], citizen.current_edge[0], weight="length")
+                self.path = path
+                if len(path) > 1:
+                    self.current_edge = (self.current_edge[0], path[1])
+                self.state = RescueState.ON_MISSION
+                with open(self.model.log_path, "a") as f:
+                    f.write(f"[RescueAgent {self.unique_id}] Safe path to citizen {citizen.unique_id}: {len(path)} steps\n")
+            except Exception:
+                with open(self.model.log_path, "a") as f:
+                    f.write(f"[RescueAgent {self.unique_id}] No path to Citizen {citizen.unique_id}\n")
+                self.path = []
+                self.target = None
+                self.state = RescueState.AVAILABLE
 
     def move_along_path(self):
         """Move along the current path according to speed and edge length."""
@@ -148,7 +99,8 @@ class RescueAgent(mesa.Agent):
                     self.carrying.append(a)
                     self.state = RescueState.CARRYING
                     self.target = None
-                    print(f"[RescueAgent {self.unique_id}] Rescued Citizen {a.unique_id}")
+                    with open(self.model.log_path, "a") as f:
+                        f.write(f"[RescueAgent {self.unique_id}] Rescued Citizen {a.unique_id}\n")
 
                     # Compute route to nearest safe location
                     safe = min(
@@ -174,7 +126,8 @@ class RescueAgent(mesa.Agent):
         # Case 1: carrying citizens → go to safety
         if self.state == RescueState.CARRYING:
             if self.current_edge[0] in self.model.safety_spot:
-                print(f"[RescueAgent {self.unique_id}] Dropped off {len(self.carrying)} citizens at safety.")
+                with open(self.model.log_path, "a") as f:
+                    f.write(f"[RescueAgent {self.unique_id}] Dropped off {len(self.carrying)} citizens at safety.\n")
                 for c in self.carrying:
                     c.state = CitizenState.SAFE
                 self.carrying.clear()

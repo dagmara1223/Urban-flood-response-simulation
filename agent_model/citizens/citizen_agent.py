@@ -66,14 +66,15 @@ class CitizenAgent(mesa.Agent):
         self.current_edge = (start_node, None)  # current edge (start_node -> next_node)
         self.progress = 0.0  # 0 = at start_node, 1 = at next_node
 
-        self.state = CitizenState.CRITICALLY_UNSAFE
+        self.state = CitizenState.UNSAFE
         self.decision_making_mode = random.choice([CitizenDecisionMakingMode.RANDOM, CitizenDecisionMakingMode.DIJIKSTRA, CitizenDecisionMakingMode.DIJIKSTRA,
                                                    CitizenDecisionMakingMode.DIJIKSTRA])
 
         self.max_speed = np.random.normal(1.5, 0.3)
         self.current_speed = self.max_speed
 
-        print(f'I am an agent {self.unique_id}, hooray location: {self.current_edge} speed: {self.max_speed} mode: {self.decision_making_mode}')
+        with open(self.model.log_path, "a") as f:
+                    f.write(f'I am an agent {self.unique_id}, hooray location: {self.current_edge} speed: {self.max_speed} mode: {self.decision_making_mode}\n')
 
     def update_state(self, water_matrix: np.ndarray):
         pass
