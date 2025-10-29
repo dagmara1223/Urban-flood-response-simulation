@@ -11,7 +11,7 @@ G_osm = ox.graph_from_place(place_name, network_type=network_type)
 '''
 # 200 meters around the center point
 center = (50.04340584275002, 19.947057402111867)
-distance = 200
+distance = 1000
 
 # Driving network
 G_drive = ox.graph_from_point(center, dist=distance, network_type='drive')
@@ -26,22 +26,11 @@ G = nx.Graph()
 # Add driving edges
 for u, v, data in G_drive.edges(data=True):
     length = data.get('length', 1.0)
-    G.add_edge(u, v, length=length, road_type='drive')
+    G.add_edge(u, v, length=length, safe='yes')
 
-# Add walking edges
-for u, v, data in G_walk.edges(data=True):
-    length = data.get('length', 1.0)
-    if G.has_edge(u, v):
-        # If already drive edge, mark as both
-        if G[u][v]['road_type'] == 'drive':
-            G[u][v]['road_type'] = 'both'
-    else:
-        G.add_edge(u, v, length=length, road_type='walk')
 
 # Add node positions
 for n, data in G_drive.nodes(data=True):
-    G.nodes[n]['pos'] = (data['x'], data['y'])
-for n, data in G_walk.nodes(data=True):
     G.nodes[n]['pos'] = (data['x'], data['y'])
 
 # Keep only the largest connected component of the combined graph
