@@ -62,7 +62,7 @@ def flood_step(height: np.ndarray, water: np.ndarray, k : float = 0.1, rain: flo
 
     return new_water
 
-
+'''
 with rasterio.open('StandardResolution.tiff') as src:
     height = src.read(1).astype(float)
     height[height == src.nodata] = np.nan
@@ -102,4 +102,4 @@ plt.show()
 # ax.set_title("Powierzchnia terenu + woda")
 # plt.show()
 
-
+'''

@@ -92,18 +92,23 @@ class RescueAgent(mesa.Agent):
         print(f"[RescueAgent {self.unique_id}] Ready at node {start_node}")
 
     def set_target(self, citizen):
-        """Assign a new target (citizen) and compute the driving path."""
+        """Assign a new target (citizen) and compute a path avoiding unsafe roads."""
         self.target = citizen
         G = self.model.space.G
+
+        # Create a subgraph that only includes safe edges
+        safe_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get("safe", "yes") == "yes"]
+        subG = G.edge_subgraph(safe_edges).copy()
+
         try:
-            path = nx.shortest_path(G, self.current_edge[0], citizen.current_edge[0], weight="length")
+            path = nx.shortest_path(subG, self.current_edge[0], citizen.current_edge[0], weight="length")
             self.path = path
             if len(path) > 1:
                 self.current_edge = (self.current_edge[0], path[1])
             self.state = RescueState.ON_MISSION
-            print(f"[RescueAgent {self.unique_id}] Path to citizen {citizen.unique_id}: {len(path)} steps")
-        except nx.NetworkXNoPath:
-            print(f"[RescueAgent {self.unique_id}] No path to Citizen {citizen.unique_id}")
+            print(f"[RescueAgent {self.unique_id}] Safe path to citizen {citizen.unique_id}: {len(path)} steps")
+        except Exception:
+            print(f"[RescueAgent {self.unique_id}] No SAFE path to Citizen {citizen.unique_id}")
             self.path = []
             self.target = None
             self.state = RescueState.AVAILABLE
@@ -155,9 +160,13 @@ class RescueAgent(mesa.Agent):
                             weight="length",
                         ),
                     )
-                    self.path = nx.shortest_path(
-                        self.model.space.G, self.current_edge[0], safe, weight="length"
-                    )
+                    safe_edges = [(u, v) for u, v, d in self.model.space.G.edges(data=True) if d.get("safe", "yes") == "yes"]
+                    subG = self.model.space.G.edge_subgraph(safe_edges).copy()
+                    try:
+                        self.path = nx.shortest_path(subG, self.current_edge[0], safe, weight="length")
+                    except Exception:
+                        self.path = nx.shortest_path(self.model.space.G, self.current_edge[0], safe, weight="length")
+
                     return
 
     def step(self):
