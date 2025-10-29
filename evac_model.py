@@ -3,17 +3,32 @@ import numpy as np
 import matplotlib.pyplot as plt
 import networkx as nx
 import random 
-from citizens.citizen_agent import CitizenAgent, CitizenState
-from call_center_agent import CallCenterAgent
-from rescue_agent import RescueAgent
+import rasterio
+from rasterio.transform import rowcol
+from agent_model.citizens.citizen_agent import CitizenAgent
+from agent_model.call_center_agent import CallCenterAgent
+from agent_model.rescue_agent import RescueAgent
+#from flood_agent.model.primitive_model import flood_step
 
 class TestModel(mesa.Model):
-    def __init__(self, n_agents, n_rescue_agents, roads_graph):
+    def __init__(self, n_agents, n_rescue_agents, roads_graph, dem_path):
         super().__init__()
         self.space = mesa.space.NetworkGrid(roads_graph) # Create a NetworkGrid based on the road graph
         self.create_agents(n=n_agents, n2=n_rescue_agents)
         self.call_center = CallCenterAgent(self)
         self.safety_spot = [n for n in self.space.G.nodes if n in [1, 13, 40]]  # Example of a safe spot node
+
+        # --- Initialize flood model ---
+        with rasterio.open(dem_path) as src:
+            self.transform = src.transform
+            self.height = src.read(1).astype(float)
+            self.height[self.height == src.nodata] = np.nan
+            self.height = np.nan_to_num(self.height, nan=np.nanmin(self.height))
+
+        self.height = self.height[800:1000, 900:1100]  # region of interest
+        self.water = np.zeros_like(self.height)
+        self.water[50:55, 90:95] = 50.0  # initial flooding
+        self.k = 0.12
 
     def create_agents(self, n: int, n2: int):
         # Create 'n' citizen agents and assign them random starting nodes
@@ -31,10 +46,14 @@ class TestModel(mesa.Model):
             self.agents.add(agent)
             self.space.place_agent(agent, start_node)
 
+        plt.ion()
+        self.fig, self.ax = plt.subplots(figsize=(10, 10))
+
     def map_depth_to_graph(self):
-        '''
-        Maps water depth values to the graph nodes as an attribute.
-        '''
+        """
+        Update flood simulation and map depth values to the road network.
+        Normalizes graph coordinates to fit water array dimensions.
+        """
         pass
         
     def step(self):
@@ -47,16 +66,17 @@ class TestModel(mesa.Model):
         self.visualise_step() # Visualize the current state of the model, just for testing
 
     def visualise_step(self):
-        plt.figure(figsize=(10, 10))
+        ax = self.ax
+        ax.clear()
 
         pos = nx.get_node_attributes(self.space.G, "pos")
         nx.draw_networkx_nodes(self.space.G, pos, nodelist=self.safety_spot, node_size=100, label='Safe Nodes', node_color='green')
 
-        walk_edges = [(u, v) for u, v, d in self.space.G.edges(data=True) if d.get('road_type') in ['walk']]
-        drive_edges = [(u, v) for u, v, d in self.space.G.edges(data=True) if d.get('road_type') in ['drive', 'both']]
+        safe_edges = [(u, v) for u, v, d in self.space.G.edges(data=True) if d.get('safe') in ['yes']]
+        unsafe_edges = [(u, v) for u, v, d in self.space.G.edges(data=True) if d.get('safe') in ['no']]
 
-        nx.draw_networkx_edges(self.space.G, pos, edgelist=walk_edges, edge_color='blue', width=2, label='Walkable Roads')
-        nx.draw_networkx_edges(self.space.G, pos, edgelist=drive_edges, edge_color='black', width=2, label='Drivable Roads')
+        nx.draw_networkx_edges(self.space.G, pos, edgelist=safe_edges, edge_color='black', width=2, label='Safe Roads')
+        nx.draw_networkx_edges(self.space.G, pos, edgelist=unsafe_edges, edge_color='red', width=2, label='Unsafe Roads')
 
 
         # Wizualizacja agentów
@@ -85,13 +105,14 @@ class TestModel(mesa.Model):
         plt.scatter(rescue_agents_x, rescue_agents_y, c='purple', s=50, label='Rescue Agents', zorder=2)
         plt.legend()
         plt.title("Road network with agents")
-        plt.show()
 
+        plt.draw()  # Update figure
+        plt.pause(1)
 
 
 def build_example_graph():
     # Tworzenie TESTOWEGO grafu drogowego
-    G = nx.read_graphml("../Data/krakow_roads.graphml")
+    G = nx.read_graphml("Data/krakow_roads.graphml")
     G = nx.convert_node_labels_to_integers(G)
     for n, data in G.nodes(data=True):
         data['pos'] = (float(data['x']), float(data['y']))
@@ -100,9 +121,10 @@ def build_example_graph():
 
 if __name__ == "__main__":
     G = build_example_graph()
-    model = TestModel(n_agents=5, n_rescue_agents=2, roads_graph=G)
-
-    for t in range(20):
+    dem_path = 'StandardResolution.tiff'
+    model = TestModel(n_agents=30, n_rescue_agents=10, roads_graph=G, dem_path=dem_path)
+    
+    for t in range(200):
         print(f"--- Step {t} ---")
         model.step()
         for a in model.agents:
