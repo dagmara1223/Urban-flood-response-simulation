@@ -65,13 +65,8 @@ def flood_step(height: np.ndarray, water: np.ndarray, k : float = 0.1, rain: flo
 
     return new_water
 
-<<<<<<< HEAD:flood_agent/model/primitive_model.py
-'''
-with rasterio.open('StandardResolution.tiff') as src:
-=======
 
 with rasterio.open('HighResolution.tiff') as src:
->>>>>>> 7eed55f (Update primitive_model.py):flood-agent/model/primitive_model.py
     height = src.read(1).astype(float)
     height[height == src.nodata] = np.nan
     height = np.nan_to_num(height, nan=np.nanmin(height))
@@ -91,21 +86,3 @@ for t in range(20):
         plt.colorbar(label="Głębokość wody [m]")
         plt.pause(0.3)
 plt.show()
-<<<<<<< HEAD:flood_agent/model/primitive_model.py
-
-plt.imshow(height, cmap='terrain', origin='upper')
-plt.imshow(water, cmap='Blues', alpha=0.6, origin='upper', vmin=0, vmax=np.max(water)/3)
-plt.title(f"Rozlew wody na terenie – krok {t}")
-plt.colorbar(label="Głębokość wody [m]")
-plt.show()
-
-# X, Y = np.meshgrid(np.arange(water.shape[0]), np.arange(water.shape[1]))
-# fig = plt.figure(figsize=(7,5))
-# ax = fig.add_subplot(111, projection='3d')
-# ax.plot_surface(X, Y, height + water, cmap='terrain')
-# ax.set_title("Powierzchnia terenu + woda")
-# plt.show()
-
-'''
-=======
->>>>>>> 7eed55f (Update primitive_model.py):flood-agent/model/primitive_model.py
