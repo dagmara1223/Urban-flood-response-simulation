@@ -11,11 +11,11 @@ from agent_model.rescue_agent import RescueAgent
 from flood_agent.model.primitive_model import flood_step
 import os
 from datetime import datetime
-import time
 
 class TestModel(mesa.Model):
     def __init__(self, n_agents, n_rescue_agents, roads_graph, dem_path, log_path):
         super().__init__()
+        self.count = 0
         self.log_path = log_path
         self.space = mesa.space.NetworkGrid(roads_graph) # Create a NetworkGrid based on the road graph
         self.create_agents(n=n_agents, n2=n_rescue_agents)
@@ -29,7 +29,7 @@ class TestModel(mesa.Model):
             self.height[self.height == src.nodata] = np.nan
             self.height = np.nan_to_num(self.height, nan=np.nanmin(self.height))
 
-        self.height = self.height[0:1000, 0:1100]  # region of interest
+        self.height = self.height[0:100, 0:110]  # region of interest
         self.water = np.zeros_like(self.height)
         self.water[50:55, 90:95] = 50.0  # initial flooding
         self.k = 0.12
@@ -83,7 +83,7 @@ class TestModel(mesa.Model):
             
             # Normalize coordinates to array indices
             col = int(((x - x_min) / (x_max - x_min)) * (ncols - 1))
-            row = int(((y - y_min) / (y_max - y_min)) * (nrows - 1))
+            row = int(((y_max - y) / (y_max - y_min)) * (nrows - 1))
             
             # Ensure within bounds (should always be, but just in case)
             row = max(0, min(row, nrows - 1))
@@ -91,9 +91,7 @@ class TestModel(mesa.Model):
             
             depth = float(self.water[row, col])
             data["depth"] = depth
-            
-            data["water_row"] = row
-            data["water_col"] = col
+            data['pos'] = (col, row)
     
     def flood_step(self):
         """
@@ -103,8 +101,8 @@ class TestModel(mesa.Model):
         self.water = flood_step(self.height, self.water, k=self.k)
 
         for n, data in self.space.G.nodes(data=True):
-            
-            depth = float(self.water[data['water_row'], data["water_col"]])
+            col, row = data['pos']
+            depth = float(self.water[row, col])
             data["depth"] = depth
 
         # --- Mark unsafe roads ---
@@ -122,35 +120,35 @@ class TestModel(mesa.Model):
             f.write(f"Unsafe edges: {unsafe_edges}/{self.space.G.number_of_edges()}\n")
         
     def step(self):
-        self.flood_step() # Update water depth on graph nodes, not shure if should be done every step
+        if self.count%15 == 0:
+            self.flood_step() # Update water depth on graph nodes, not shure if should be done every step
 
-        self.call_center.step()
+        if self.count%5 == 0:
+            self.call_center.step()
 
-        for i in range(60): # na razie testowo 10 substeps per step
-            for i in range(10):
-                self.agents.do("step")
-            self.visualise_step() # Visualize the current state of the model, just for testing
+        
+        self.agents.do("step")
+        self.visualise_step() # Visualize the current state of the model, just for testing
+        
+        self.count += 1
 
     def visualise_step(self):
         ax = self.ax
         ax.clear()
+        G = self.space.G
+        safety_spot = self.safety_spot
+        agents = self.agents
+        pos = nx.get_node_attributes(G, "pos")        
 
-        pos = nx.get_node_attributes(self.space.G, "pos")
-        nx.draw_networkx_nodes(self.space.G, pos, nodelist=self.safety_spot, node_size=100, label='Safe Nodes', node_color='green')
-
-        safe_edges = [(u, v) for u, v, d in self.space.G.edges(data=True) if d.get('safe') in ['yes']]
-        unsafe_edges = [(u, v) for u, v, d in self.space.G.edges(data=True) if d.get('safe') in ['no']]
-
-        nx.draw_networkx_edges(self.space.G, pos, edgelist=safe_edges, edge_color='black', width=2, label='Safe Roads')
-        nx.draw_networkx_edges(self.space.G, pos, edgelist=unsafe_edges, edge_color='red', width=2, label='Unsafe Roads')
-
+        safe_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get('safe') in ['yes']]
+        unsafe_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get('safe') in ['no']]
 
         # Wizualizacja agentów
         agent_positions_x = []
         agent_positions_y = []
         rescue_agents_x = []
         rescue_agents_y = []
-        for agent in self.agents:
+        for agent in agents:
             if not isinstance(agent, (CitizenAgent, RescueAgent)):
                 continue
             x0, y0 = pos[agent.current_edge[0]]
@@ -167,13 +165,21 @@ class TestModel(mesa.Model):
             agent_positions_x.append(x)
             agent_positions_y.append(y)
 
-        plt.scatter(agent_positions_x, agent_positions_y, c='blue', s=50, label='Agents', zorder=2)
-        plt.scatter(rescue_agents_x, rescue_agents_y, c='purple', s=50, label='Rescue Agents', zorder=2)
+        ax.imshow(self.height, cmap='terrain', origin='upper')
+        ax.imshow(self.water, cmap='Blues', alpha=0.6, origin='upper', vmin=0, vmax=np.max(self.water)/3)
+        
+        nx.draw_networkx_nodes(G, pos, nodelist=safety_spot, node_size=100, label='Safe Nodes', node_color='green')
+        nx.draw_networkx_edges(G, pos, edgelist=safe_edges, edge_color='black', width=2, label='Safe Roads')
+        nx.draw_networkx_edges(G, pos, edgelist=unsafe_edges, edge_color='red', width=2, label='Unsafe Roads')
+
+        plt.scatter(agent_positions_x, agent_positions_y, c='blue', s=20, label='Agents', zorder=2)
+        plt.scatter(rescue_agents_x, rescue_agents_y, c='purple', s=20, label='Rescue Agents', zorder=2)
+
         plt.legend()
         plt.title("Road network with agents")
 
         plt.draw()  # Update figure
-        plt.pause(2)
+        plt.pause(0.2)
 
 
 def build_example_graph(path):
@@ -198,7 +204,7 @@ if __name__ == "__main__":
     G = build_example_graph(graph_path)
     model = TestModel(n_agents=n_agents, n_rescue_agents=n_rescue_agents, roads_graph=G, dem_path=dem_path, log_path=log_path)
     
-    for t in range(20):
+    for t in range(200):
         with open(log_path, "a") as f:
             f.write(f"\n--- Step {t} ---\n")
         print(f"--- Step {t} ---")
