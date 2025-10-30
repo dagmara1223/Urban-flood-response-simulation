@@ -20,7 +20,7 @@ class TestModel(mesa.Model):
         self.space = mesa.space.NetworkGrid(roads_graph) # Create a NetworkGrid based on the road graph
         self.create_agents(n=n_agents, n2=n_rescue_agents)
         self.call_center = CallCenterAgent(self)
-        self.safety_spot = [n for n in self.space.G.nodes if n in [1, 13, 40]]  # Example of a safe spot node
+        self.safety_spot = [n for n in self.space.G.nodes if n in [13, 40]]  # Example of a safe spot node
 
         # --- Initialize flood model ---
         with rasterio.open(dem_path) as src:
@@ -33,6 +33,7 @@ class TestModel(mesa.Model):
         self.water = np.zeros_like(self.height)
         self.water[100:150, 0:100] = 10.0 
         self.water[300:350, 0:100] = 10.0
+        self.water[200:250, 200:300] = 10.0
         self.k = 0.12
 
         self.map_depth_to_graph()
@@ -113,15 +114,15 @@ class TestModel(mesa.Model):
                 self.space.G.nodes[u].get("depth", 0),
                 self.space.G.nodes[v].get("depth", 0),
             )
-            d["safe"] = "no" if node_depth > 3 else "yes"
-            if node_depth > 3:
+            d["safe"] = "no" if node_depth > 0.5 else "yes"
+            if node_depth > 0.5:
                 unsafe_edges += 1
                 
         with open(self.log_path, "a") as f:
             f.write(f"Unsafe edges: {unsafe_edges}/{self.space.G.number_of_edges()}\n")
         
     def step(self):
-        if self.count%15 == 0:
+        if self.count%5 == 0:
             self.flood_step() # Update water depth on graph nodes, not shure if should be done every step
 
         if self.count%5 == 0:
@@ -166,8 +167,8 @@ class TestModel(mesa.Model):
             agent_positions_x.append(x)
             agent_positions_y.append(y)
 
-        ax.imshow(self.water, cmap='Blues', alpha=0.6, origin='upper', vmin=0, vmax=np.max(self.water)/3)
         ax.imshow(self.height, cmap='terrain', origin='upper') 
+        ax.imshow(self.water, cmap='Blues', alpha=0.6, origin='upper', vmin=0, vmax=np.max(self.water)/3)
         
         nx.draw_networkx_nodes(G, pos, nodelist=safety_spot, node_size=100, label='Safe Nodes', node_color='green')
         nx.draw_networkx_edges(G, pos, edgelist=safe_edges, edge_color='black', width=2, label='Safe Roads')

@@ -90,6 +90,9 @@ class CitizenAgent(mesa.Agent):
             return
         if self.current_edge[1] is None:
             self.choose_destination()
+        if self.model.space.G.nodes[self.current_edge[0]].get("depth", 0) > 0.5:
+            self.state = CitizenState.CRITICALLY_UNSAFE
+            return
         self.evacuate()
 
     def choose_destination(self):

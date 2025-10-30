@@ -55,7 +55,7 @@ class CallCenterAgent:
                 )
                 closest.set_target(citizen)
                 with open(self.model.log_path, "a") as f:
-                    f.write(f"[CallCenter] Assigned RescueAgent {closest.unique_id} → Citizen {citizen.unique_id}\n")
+                    f.write(f"[CallCenter] Assigned RescueAgent {closest.unique_id} -> Citizen {citizen.unique_id}\n")
             except nx.NetworkXNoPath:
                 continue
 
