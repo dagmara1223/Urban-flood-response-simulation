@@ -8,17 +8,24 @@ network_type = "drive"  # Options: 'walk', 'bike', 'drive'
 
 # Download the road network
 G_osm = ox.graph_from_place(place_name, network_type=network_type)
-'''
+
 # 200 meters around the center point
 center = (50.04340584275002, 19.947057402111867)
 distance = 1000
 
 # Driving network
 G_drive = ox.graph_from_point(center, dist=distance, network_type='drive')
+'''
+left = 19.94312835271821
+bottom = 50.04133028276119
+right = 19.95277392442152
+top = 50.04696247300208
+
+G_drive = ox.graph_from_bbox((left, bottom, right, top), network_type='drive')
 G_drive = ox.project_graph(G_drive)
 
 # Walking network
-G_walk = ox.graph_from_point(center, dist=distance, network_type='walk')
+G_walk = ox.graph_from_bbox((left, bottom, right, top), network_type='walk')
 G_walk = ox.project_graph(G_walk)
 
 G = nx.Graph()
@@ -27,10 +34,14 @@ G = nx.Graph()
 for u, v, data in G_drive.edges(data=True):
     length = data.get('length', 1.0)
     G.add_edge(u, v, length=length, safe='yes')
-
+for u, v, data in G_walk.edges(data=True):
+    length = data.get('length', 1.0)
+    G.add_edge(u, v, length=length, safe='yes')
 
 # Add node positions
 for n, data in G_drive.nodes(data=True):
+    G.nodes[n]['pos'] = (data['x'], data['y'])
+for n, data in G_walk.nodes(data=True):
     G.nodes[n]['pos'] = (data['x'], data['y'])
 
 # Keep only the largest connected component of the combined graph

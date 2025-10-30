@@ -29,9 +29,10 @@ class TestModel(mesa.Model):
             self.height[self.height == src.nodata] = np.nan
             self.height = np.nan_to_num(self.height, nan=np.nanmin(self.height))
 
-        self.height = self.height[0:100, 0:110]  # region of interest
+        self.height = self.height[::10, ::10]  # region of interest
         self.water = np.zeros_like(self.height)
-        self.water[50:55, 90:95] = 50.0  # initial flooding
+        self.water[100:150, 0:100] = 10.0 
+        self.water[300:350, 0:100] = 10.0
         self.k = 0.12
 
         self.map_depth_to_graph()
@@ -165,8 +166,8 @@ class TestModel(mesa.Model):
             agent_positions_x.append(x)
             agent_positions_y.append(y)
 
-        ax.imshow(self.height, cmap='terrain', origin='upper')
         ax.imshow(self.water, cmap='Blues', alpha=0.6, origin='upper', vmin=0, vmax=np.max(self.water)/3)
+        ax.imshow(self.height, cmap='terrain', origin='upper') 
         
         nx.draw_networkx_nodes(G, pos, nodelist=safety_spot, node_size=100, label='Safe Nodes', node_color='green')
         nx.draw_networkx_edges(G, pos, edgelist=safe_edges, edge_color='black', width=2, label='Safe Roads')
@@ -198,7 +199,7 @@ if __name__ == "__main__":
     log_path = os.path.join(folder_path, "log.txt")
 
     graph_path = 'Data/krakow_roads.graphml'
-    dem_path = 'Data/StandardResolution.tiff'
+    dem_path = 'Data/HighResolution.tiff'
     n_agents = 30
     n_rescue_agents = 5
     G = build_example_graph(graph_path)

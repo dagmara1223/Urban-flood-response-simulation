@@ -39,6 +39,8 @@ def flood_step(height: np.ndarray, water: np.ndarray, k : float = 0.1, rain: flo
     # integracja po wszystkich komorkach
     for i in range(1, height.shape[0] - 1):
         for j in range(1, height.shape[1] - 1):
+            if water[i, j] <= 0:
+                continue
             neighbors = total_level[i-1:i+2, j-1:j+2] # wycinek 3 na 3 sasiadow (8 kierunkow)
 
             diff = total_level[i, j] - neighbors # zmiany wzgledem aktualnej komorki
@@ -65,8 +67,8 @@ def flood_step(height: np.ndarray, water: np.ndarray, k : float = 0.1, rain: flo
 
     return new_water
 
-
-with rasterio.open('HighResolution.tiff') as src:
+'''
+with rasterio.open('Data/HighResolution.tiff') as src:
     height = src.read(1).astype(float)
     height[height == src.nodata] = np.nan
     height = np.nan_to_num(height, nan=np.nanmin(height))
@@ -86,3 +88,4 @@ for t in range(20):
         plt.colorbar(label="Głębokość wody [m]")
         plt.pause(0.3)
 plt.show()
+'''
