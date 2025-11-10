@@ -8,7 +8,7 @@ from rasterio.transform import rowcol
 from agent_model.citizens.citizen_agent import CitizenAgent
 from agent_model.call_center_agent import CallCenterAgent
 from agent_model.rescue_agent import RescueAgent
-from flood_agent.model.primitive_model import flood_step
+#from flood_agent.model.model import flood_step
 import os
 from datetime import datetime
 
@@ -22,22 +22,26 @@ class TestModel(mesa.Model):
         self.call_center = CallCenterAgent(self)
         self.safety_spot = [n for n in self.space.G.nodes if n in [13, 40]]  # Example of a safe spot node
 
-        # --- Initialize flood model ---
-        with rasterio.open(dem_path) as src:
-            self.transform = src.transform
-            self.height = src.read(1).astype(float)
-            self.height[self.height == src.nodata] = np.nan
-            self.height = np.nan_to_num(self.height, nan=np.nanmin(self.height))
+        self.water_maps = self.load_water_maps("data")
+        self.nrows, self.ncols = self.water_maps[0].shape
 
-        self.height = self.height[::10, ::10]  # region of interest
-        self.water = np.zeros_like(self.height)
-        self.water[100:150, 0:100] = 10.0 
-        self.water[300:350, 0:100] = 10.0
-        self.water[200:250, 200:300] = 10.0
-        self.k = 0.12
+        with rasterio.open("krakow_merged.tif") as src:
+            height = src.read(1)
+        self.height = height[2000:3200, 3500:4800]
+        self.height = self.height[::6, ::6]
 
-        self.map_depth_to_graph()
+        # mapowanie pierwszego kroku
+        self.water = self.water_maps[0]
 
+    def load_water_maps(self, folder_path):
+        """Wczytuje wszystkie zapisane pliki .npy z symulacji powodzi i sortuje je rosnąco po numerze kroku"""
+        files = sorted(
+            [f for f in os.listdir(folder_path) if f.endswith(".npy")],
+            key=lambda x: int(x.split("_")[-1].split(".")[0])
+        )
+        water_maps = [np.load(os.path.join(folder_path, f)) for f in files]
+        return water_maps
+    
     def create_agents(self, n: int, n2: int):
         # Create 'n' citizen agents and assign them random starting nodes
         # TODO: Should be changed to realistic start positions
@@ -57,53 +61,19 @@ class TestModel(mesa.Model):
         plt.ion()
         self.fig, self.ax = plt.subplots(figsize=(10, 10))
 
-    def map_depth_to_graph(self):
-        nrows, ncols = self.water.shape
-        
-        # Get min/max coordinates from graph nodes
-        pos_dict = nx.get_node_attributes(self.space.G, "pos")
-        if not pos_dict:
-            return
-            
-        xs = [pos[0] for pos in pos_dict.values()]
-        ys = [pos[1] for pos in pos_dict.values()]
-        
-        x_min, x_max = min(xs), max(xs)
-        y_min, y_max = min(ys), max(ys)
-        
-        with open(self.log_path, "a") as f:
-            f.write(f"Graph bounds: x({x_min:.2f}, {x_max:.2f}), y({y_min:.2f}, {y_max:.2f})\n")
-            f.write(f"Water array: {nrows} x {ncols}\n")
-        
-        # --- Map flood depths to road nodes ---
-        for n, data in self.space.G.nodes(data=True):
-            if "pos" not in data:
-                data["depth"] = 0.0
-                continue
-                
-            x, y = data["pos"]
-            
-            # Normalize coordinates to array indices
-            col = int(((x - x_min) / (x_max - x_min)) * (ncols - 1))
-            row = int(((y_max - y) / (y_max - y_min)) * (nrows - 1))
-            
-            # Ensure within bounds (should always be, but just in case)
-            row = max(0, min(row, nrows - 1))
-            col = max(0, min(col, ncols - 1))
-            
-            depth = float(self.water[row, col])
-            data["depth"] = depth
-            data['pos'] = (col, row)
     
     def flood_step(self):
         """
         Update flood simulation and map depth values to the road network.
         """
         # --- Flood update ---
-        self.water = flood_step(self.height, self.water, k=self.k)
+        if self.count < len(self.water_maps):
+            self.water = self.water_maps[self.count]
+        else:
+            self.water = self.water_maps[-1]
 
         for n, data in self.space.G.nodes(data=True):
-            col, row = data['pos']
+            col, row = data['pos_array']
             depth = float(self.water[row, col])
             data["depth"] = depth
 
@@ -140,7 +110,7 @@ class TestModel(mesa.Model):
         G = self.space.G
         safety_spot = self.safety_spot
         agents = self.agents
-        pos = nx.get_node_attributes(G, "pos")        
+        pos = nx.get_node_attributes(G, "pos_array")        
 
         safe_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get('safe') in ['yes']]
         unsafe_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get('safe') in ['no']]
@@ -190,6 +160,7 @@ def build_example_graph(path):
     G = nx.convert_node_labels_to_integers(G)
     for n, data in G.nodes(data=True):
         data['pos'] = (float(data['x']), float(data['y']))
+        data['pos_array'] = (int(data['pos_array_x']), int(data['pos_array_y']))
     return G
 
 
@@ -199,8 +170,9 @@ if __name__ == "__main__":
     os.makedirs(folder_path, exist_ok=True)
     log_path = os.path.join(folder_path, "log.txt")
 
-    graph_path = 'Data/krakow_roads.graphml'
-    dem_path = 'Data/HighResolution.tiff'
+    graph_path = 'Data/krakow_roads2.graphml'
+    dem_path = 'krakow_merged.tif'
+
     n_agents = 30
     n_rescue_agents = 5
     G = build_example_graph(graph_path)
