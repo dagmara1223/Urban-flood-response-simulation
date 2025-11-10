@@ -16,7 +16,9 @@ class TestModel(mesa.Model):
     def __init__(self, n_agents, n_rescue_agents, roads_graph, dem_path, log_path):
         super().__init__()
         self.count = 0
-        self.log_path = log_path
+        self.log_path = os.path.join(log_path, "log.txt")
+        self.log_path_time = os.path.join(log_path, "evac_time.txt")
+
         self.space = mesa.space.NetworkGrid(roads_graph) # Create a NetworkGrid based on the road graph
         self.create_agents(n=n_agents, n2=n_rescue_agents)
         self.call_center = CallCenterAgent(self)
@@ -176,7 +178,7 @@ if __name__ == "__main__":
     n_agents = 30
     n_rescue_agents = 5
     G = build_example_graph(graph_path)
-    model = TestModel(n_agents=n_agents, n_rescue_agents=n_rescue_agents, roads_graph=G, dem_path=dem_path, log_path=log_path)
+    model = TestModel(n_agents=n_agents, n_rescue_agents=n_rescue_agents, roads_graph=G, dem_path=dem_path, log_path=folder_path)
     
     for t in range(200):
         with open(log_path, "a") as f:
