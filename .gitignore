@@ -3,3 +3,7 @@ venv/
 __pycache__/
 Data/StandardResolution.tiff
 output
+*.npy
+*.tiff
+*.tif
+cache/
