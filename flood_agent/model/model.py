@@ -65,6 +65,7 @@ def flood_step(height: np.ndarray, water: np.ndarray, k : float, roads_mask)-> n
     return np.clip(new_water, 0, None)
 
 # polaczenie ze soba pobranych obszarow tiff
+'''
 tiffs = glob.glob("dem/*.tiff")
 src_files_to_mosaic = []
 for fp in tiffs:
@@ -80,7 +81,7 @@ out_meta.update({
     "width": mosaic.shape[2],
     "transform": out_transform
 })
-
+'''
 # zapis połączonego DEM
 # with rasterio.open("krakow_merged.tif", "w", **out_meta) as dest:
 #     dest.write(mosaic)
@@ -114,6 +115,8 @@ x_max, y_min = xy(transform, r1, c1)
 # pobieramy bounding box w DEM CRS
 bbox_poly = box(x_min, y_min, x_max, y_max)
 
+from pyproj import CRS
+raster_crs = CRS.from_epsg(2180)
 # pobieramy drogi w WGS84
 to_wgs84 = Transformer.from_crs(raster_crs, "EPSG:4326", always_xy=True).transform
 bbox_poly_wgs = shp_transform(to_wgs84, bbox_poly)
@@ -203,6 +206,10 @@ for hours, mmph in rain_block:
 total_mm = sum(h*mmph for h, mmph in rain_block)
 print(f"Łączny opad scenariusza ≈ {total_mm} mm")
 
+import os
+output_folder = "data"
+os.makedirs(output_folder, exist_ok=True)
+
 k = 0.15 # startowo 
 overflow_triggered = False  # sygnał czy już było przelanie
 plt.figure(figsize=(10,6))
@@ -214,7 +221,9 @@ for t, rain_m in enumerate(rain_series):
     # przepływ co X kroków
     if t % 5 == 0:
         water = flood_step(rynek, water, k=k, roads_mask=roads_mask)
-
+    
+    np.save(os.path.join(output_folder, f"water_step_{t:04d}.npy"), water)
+    
     # sprawdzamy overflow wisly
     if (not overflow_triggered) and (water[river_mask].mean() > 1.5):
         print(f"*** UWAGA: Wisła PRZELAŁA WAŁY! (krok={t}, czas={t*10} minut) ***")
