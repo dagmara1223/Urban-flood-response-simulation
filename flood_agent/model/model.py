@@ -37,7 +37,7 @@ Zasada przeplywu:
 """
 
 # , rain: float= 0.0 - usuniety argument
-def flood_step(height: np.ndarray, water: np.ndarray, k : float = 0.12)-> np.ndarray:
+def flood_step(height: np.ndarray, water: np.ndarray, k : float, roads_mask)-> np.ndarray:
     # zmienne
     total_level = height + water # poziom całkowity
     new_water = water.copy() # kopia wody do zapisu zmian
@@ -49,7 +49,9 @@ def flood_step(height: np.ndarray, water: np.ndarray, k : float = 0.12)-> np.nda
 
             diff = total_level[i, j] - neighbors # zmiany wzgledem aktualnej komorki
 
-            flow = np.clip(diff * k, 0, None) # przeplyw tam, gdzie sasiad jest nizszy(diff>0)
+            # lokalny współczynnik przepływu: drogi ×2.0 - poniewaz droga przyspiesza szybkosc przeplywu
+            local_k = np.where(roads_mask[i,j], k*2.0, k)
+            flow = np.clip(diff * local_k, 0, None)
 
             total_outflow = flow.sum() - flow[1, 1] # calkowita ilosc wyplywajacej wody 
 
@@ -94,8 +96,10 @@ with rasterio.open("krakow_merged.tif") as src:
    
 
 #obszar rynku 
-rynek = height[1400:2600, 3800:5000]
+rynek = height[2000:3200, 3500:4800]
 rynek = rynek[::6, ::6]
+
+water = np.zeros_like(rynek, dtype=float)
 
 # ------------------ area drog --------------------------------------------------------
 
@@ -129,15 +133,51 @@ roads_raster_full = rasterize(
 )
 
 # wycinek jak dla rynku - wazne - do zmiany gdy zmienia sie obszar height
-roads_rynek = roads_raster_full[1400:2600, 3800:5000]
+roads_rynek = roads_raster_full[2000:3200, 3500:4800]
 
 # downsampling taki jak przy glownym obszarze
 roads_rynek = roads_rynek[::6, ::6]
 
 # ------------------ koniec area drog ---------------------------------------------
+roads_mask = roads_rynek.astype(bool)
 
+# ------------------ area maski wisly ---------------------------------------------
+# pobieram wisle
+gdf_river = ox.features_from_polygon(bbox_poly_wgs, {"waterway": "river"})
 
+# filtr tylko wisla - nie chcemy zalapania sie innej rzeki - Vistula
+gdf_river = gdf_river[
+    gdf_river.get("name", "").str.contains("Wis", case=False, na=False) |
+    gdf_river.get("name", "").str.contains("Vist", case=False, na=False)
+]
 
+# jeśli pusta 
+if gdf_river.empty:
+    gdf_river = ox.features_from_polygon(bbox_poly_wgs, {"water": "river"})
+
+# projekcja do CRS DEM
+river = gdf_river.to_crs(raster_crs)
+
+# bufor – bo linia rzeki ma szerokość
+river["geometry"] = river.buffer(15)  # 15 m – można dać 20, 30 itd do zmian
+
+river_raster_full = rasterize(
+    [(geom, 1) for geom in river.geometry],
+    out_shape=height.shape,
+    transform=transform,
+    fill=0
+)
+
+# wycinek rynku
+river_rynek = river_raster_full[2000:3200, 3500:4800]
+river_rynek = river_rynek[::6, ::6]
+
+# maska wisły
+river_mask = river_rynek.astype(bool)
+
+# startowy poziom rzeki
+water[river_mask] = 0.50  # 50 cm wody w korycie na starcie
+# ----------------- koniec maski wisly ------------------------------------------
 
 # dodajemy opady 
 dt_seconds = 600.0  # co 10 min
@@ -163,8 +203,8 @@ for hours, mmph in rain_block:
 total_mm = sum(h*mmph for h, mmph in rain_block)
 print(f"Łączny opad scenariusza ≈ {total_mm} mm")
 
-water = np.zeros_like(rynek, dtype=float)
-
+k = 0.15 # startowo 
+overflow_triggered = False  # sygnał czy już było przelanie
 plt.figure(figsize=(10,6))
 for t, rain_m in enumerate(rain_series):
 
@@ -173,7 +213,24 @@ for t, rain_m in enumerate(rain_series):
 
     # przepływ co X kroków
     if t % 5 == 0:
-        water = flood_step(rynek, water, k=0.15)
+        water = flood_step(rynek, water, k=k, roads_mask=roads_mask)
+
+    # sprawdzamy overflow wisly
+    if (not overflow_triggered) and (water[river_mask].mean() > 1.5):
+        print(f"*** UWAGA: Wisła PRZELAŁA WAŁY! (krok={t}, czas={t*10} minut) ***")
+        
+        # zwiększamy przepływ globalnie - wisla pcha szybciej wode
+        k = 0.25
+        
+        # efekt gwałtownego wylania
+        # water[rzeka sąsiadująca] += 0.4 m
+    
+        # piksele sąsiadujące z river_mask
+        from scipy.ndimage import binary_dilation
+        ring = binary_dilation(river_mask) & (~river_mask)
+        water[ring] += 0.4  # 40 cm nagle w okolicy wałów
+        
+        overflow_triggered = True
 
     # animacja co 20 kroków
     if t % 20 == 0:
