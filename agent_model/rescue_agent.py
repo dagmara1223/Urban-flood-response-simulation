@@ -28,6 +28,8 @@ class RescueAgent(mesa.Agent):
         self.path = []
         self.state = RescueState.AVAILABLE
 
+        self.rescue_start_times = {}  # citizen_id -> start time
+
         with open(self.model.log_path, "a") as f:
                     f.write(f"[RescueAgent {self.unique_id}] Ready at node {start_node}\n")
 
@@ -35,6 +37,8 @@ class RescueAgent(mesa.Agent):
         """Assign a new target (citizen) and compute a path avoiding unsafe roads."""
         self.target = citizen
         G = self.model.space.G
+        if citizen.unique_id not in self.rescue_start_times:
+            self.rescue_start_times[citizen.unique_id] = self.model.count
 
         # Create a subgraph that only includes safe edges
         safe_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get("safe", "yes") == "yes"]
@@ -99,8 +103,15 @@ class RescueAgent(mesa.Agent):
                     self.carrying.append(a)
                     self.state = RescueState.CARRYING
                     self.target = None
+
                     with open(self.model.log_path, "a") as f:
                         f.write(f"[RescueAgent {self.unique_id}] Rescued Citizen {a.unique_id}\n")
+
+                    start_step = self.rescue_start_times.pop(a.unique_id, self.model.count)
+                    evac_time = self.model.count - start_step
+                    with open(self.model.log_path_time, "a") as f:
+                        f.write(f"RESCUED: RescueAgent: {self.unique_id}, Citizen: {a.unique_id}, time: {evac_time} steps [{start_step} - {self.model.count}]\n")
+                    self.rescue_start_times[a.unique_id] = self.model.count
 
                     # Compute route to nearest safe location
                     safe = min(
@@ -130,6 +141,11 @@ class RescueAgent(mesa.Agent):
                     f.write(f"[RescueAgent {self.unique_id}] Dropped off {len(self.carrying)} citizens at safety.\n")
                 for c in self.carrying:
                     c.state = CitizenState.SAFE
+
+                    start_step = self.rescue_start_times.pop(c.unique_id, self.model.count)
+                    evac_time = self.model.count - start_step
+                    with open(self.model.log_path_time, "a") as f:
+                        f.write(f"SAFE: RescueAgent: {self.unique_id}, Citizen: {c.unique_id}, time: {evac_time} steps [{start_step} - {self.model.count}]\n")
                 self.carrying.clear()
                 self.state = RescueState.AVAILABLE
             else:
