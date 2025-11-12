@@ -162,7 +162,7 @@ if gdf_river.empty:
 river = gdf_river.to_crs(raster_crs)
 
 # bufor – bo linia rzeki ma szerokość
-river["geometry"] = river.buffer(15)  # 15 m – można dać 20, 30 itd do zmian
+river["geometry"] = river.buffer(30)  # 15 m – można dać 20, 30 itd do zmian
 
 river_raster_full = rasterize(
     [(geom, 1) for geom in river.geometry],
@@ -217,9 +217,10 @@ for t, rain_m in enumerate(rain_series):
     # przepływ co X kroków
     if t % 5 == 0:
         water = flood_step(rynek, water, k=k, roads_mask=roads_mask)
+        print(f"{t}: max={np.max(water):.3f} m, mean={np.mean(water):.3f} m")
 
     # sprawdzamy overflow wisly
-    if (not overflow_triggered) and (water[river_mask].mean() > 1.5):
+    if (not overflow_triggered) and (np.max(water[river_mask]) > 1.5):
         print(f"*** UWAGA: Wisła PRZELAŁA WAŁY! (krok={t}, czas={t*10} minut) ***")
         
         # zwiększamy przepływ globalnie - wisla pcha szybciej wode
