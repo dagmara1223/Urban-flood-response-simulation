@@ -90,9 +90,13 @@ class CitizenAgent(mesa.Agent):
             return
         if self.current_edge[1] is None:
             self.choose_destination()
-        if self.model.space.G.nodes[self.current_edge[0]].get("depth", 0) > 0.5:
+        water_depth = self.model.space.G.nodes[self.current_edge[0]].get("depth", 0)
+        if water_depth > 0.5:
             self.state = CitizenState.CRITICALLY_UNSAFE
             return
+        else:
+            self.current_speed = self.max_speed * np.exp(-2 * water_depth)
+            self.current_speed = max(self.current_speed, 0.5)
         self.evacuate()
 
     def choose_destination(self):
