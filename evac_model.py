@@ -24,7 +24,7 @@ class TestModel(mesa.Model):
         self.call_center = CallCenterAgent(self)
         self.safety_spot = [n for n in self.space.G.nodes if n in [13, 40]]  # Example of a safe spot node
 
-        self.water_maps = self.load_water_maps("data")
+        self.water_maps = self.load_water_maps("Data")
         self.nrows, self.ncols = self.water_maps[0].shape
 
         with rasterio.open("krakow_merged.tif") as src:
