@@ -37,35 +37,37 @@ Zasada przeplywu:
 """
 
 # , rain: float= 0.0 - usuniety argument
-def flood_step(height: np.ndarray, water: np.ndarray, k : float, roads_mask)-> np.ndarray:
-    # zmienne
-    total_level = height + water # poziom całkowity
-    new_water = water.copy() # kopia wody do zapisu zmian
+def flood_step(height: np.ndarray, water: np.ndarray, k: float, roads_mask) -> np.ndarray:
+    total_level = height + water
+    new_water = water.copy()
 
-    # integracja po wszystkich komorkach
     for i in range(1, height.shape[0] - 1):
         for j in range(1, height.shape[1] - 1):
-            neighbors = total_level[i-1:i+2, j-1:j+2] # wycinek 3 na 3 sasiadow (8 kierunkow)
+            neighbors = total_level[i-1:i+2, j-1:j+2]
+            diff = total_level[i, j] - neighbors
 
-            diff = total_level[i, j] - neighbors # zmiany wzgledem aktualnej komorki
+            # przepływ tylko w dół (Δz > 0)
+            flow = np.clip(diff, 0, None)
 
-            # lokalny współczynnik przepływu: drogi ×2.0 - poniewaz droga przyspiesza szybkosc przeplywu
-            local_k = np.where(roads_mask[i,j], k*2.0, k)
-            flow = np.clip(diff * local_k, 0, None)
+            # sumujemy wypływy, pomijając środkową komórkę
+            flow_sum = flow.sum() - flow[1,1]
 
-            total_outflow = flow.sum() - flow[1, 1] # calkowita ilosc wyplywajacej wody 
+            if flow_sum > 0 and water[i,j] > 0:
+                # współczynnik przepływu (drogi szybciej)
+                local_k = k * (2.0 if roads_mask[i,j] else 1.0)
 
-            # jesli cos wyplywa -> aktualizacja stanu wody
-            if total_outflow > 0:
-                new_water[i,j] -= total_outflow
-                # przeplyw do sasiadow bez samej tej komorki
-                new_water[i-1:i+2, j-1:j+2] += flow
-                new_water[i, j] -= flow[1,1] 
+                # normalizacja – rozdzielamy proporcjonalnie
+                flow_norm = flow / flow_sum
 
-    return np.clip(new_water, 0, None)
+                # ile wody wypływa z tej komórki
+                outflow = local_k * water[i,j]
+
+                # aktualizacja
+                new_water[i,j] -= outflow
+                new_water[i-1:i+2, j-1:j+2] += flow_norm * outflow
+    return np.clip(new_water,0,None)
 
 # polaczenie ze soba pobranych obszarow tiff
-'''
 tiffs = glob.glob("dem/*.tiff")
 src_files_to_mosaic = []
 for fp in tiffs:
@@ -81,7 +83,7 @@ out_meta.update({
     "width": mosaic.shape[2],
     "transform": out_transform
 })
-'''
+
 # zapis połączonego DEM
 # with rasterio.open("krakow_merged.tif", "w", **out_meta) as dest:
 #     dest.write(mosaic)
@@ -115,8 +117,6 @@ x_max, y_min = xy(transform, r1, c1)
 # pobieramy bounding box w DEM CRS
 bbox_poly = box(x_min, y_min, x_max, y_max)
 
-from pyproj import CRS
-raster_crs = CRS.from_epsg(2180)
 # pobieramy drogi w WGS84
 to_wgs84 = Transformer.from_crs(raster_crs, "EPSG:4326", always_xy=True).transform
 bbox_poly_wgs = shp_transform(to_wgs84, bbox_poly)
@@ -206,10 +206,6 @@ for hours, mmph in rain_block:
 total_mm = sum(h*mmph for h, mmph in rain_block)
 print(f"Łączny opad scenariusza ≈ {total_mm} mm")
 
-import os
-output_folder = "data"
-os.makedirs(output_folder, exist_ok=True)
-
 k = 0.15 # startowo 
 overflow_triggered = False  # sygnał czy już było przelanie
 plt.figure(figsize=(10,6))
@@ -221,9 +217,7 @@ for t, rain_m in enumerate(rain_series):
     # przepływ co X kroków
     if t % 5 == 0:
         water = flood_step(rynek, water, k=k, roads_mask=roads_mask)
-    
-    np.save(os.path.join(output_folder, f"water_step_{t:04d}.npy"), water)
-    
+
     # sprawdzamy overflow wisly
     if (not overflow_triggered) and (water[river_mask].mean() > 1.5):
         print(f"*** UWAGA: Wisła PRZELAŁA WAŁY! (krok={t}, czas={t*10} minut) ***")
@@ -245,7 +239,8 @@ for t, rain_m in enumerate(rain_series):
     if t % 20 == 0:
         plt.clf()
 
-        plt.imshow(roads_rynek, cmap="binary", alpha=0.18, origin="upper")
+        #plt.imshow(roads_rynek, cmap="binary", alpha=0.18, origin="upper")
+        plt.imshow(roads_rynek, cmap="gray", alpha=0.3)
         plt.contour(roads_rynek, levels=[0.5], colors='black', linewidths=0.5)
 
         # terrain
