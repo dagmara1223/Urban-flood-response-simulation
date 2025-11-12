@@ -108,7 +108,6 @@ def map_depth_to_graph(G, water_map, roads_raster, transform):
         col = max(0, min(col, ncols - 1))
 
         data['depth'] = float(0)
-        data['on_road'] = bool(roads_raster[row, col])
 
         # zapis pozycji w macierzy do węzła
         data['pos_array_y'] = int(row)

@@ -68,7 +68,7 @@ class CitizenAgent(mesa.Agent):
 
         self.state = CitizenState.UNSAFE
         self.decision_making_mode = random.choice([CitizenDecisionMakingMode.RANDOM, CitizenDecisionMakingMode.DIJIKSTRA, CitizenDecisionMakingMode.DIJIKSTRA,
-                                                   CitizenDecisionMakingMode.DIJIKSTRA])
+                                                   CitizenDecisionMakingMode.FOLLOWER, CitizenDecisionMakingMode.FOLLOWER])
 
         self.max_speed = np.random.normal(1.5, 0.3)
         self.current_speed = self.max_speed
@@ -90,9 +90,13 @@ class CitizenAgent(mesa.Agent):
             return
         if self.current_edge[1] is None:
             self.choose_destination()
-        if self.model.space.G.nodes[self.current_edge[0]].get("depth", 0) > 0.5:
+        water_depth = self.model.space.G.nodes[self.current_edge[0]].get("depth", 0)
+        if water_depth > 0.5:
             self.state = CitizenState.CRITICALLY_UNSAFE
             return
+        else:
+            self.current_speed = self.max_speed * np.exp(-2 * water_depth)
+            self.current_speed = max(self.current_speed, 0.5)
         self.evacuate()
 
     def choose_destination(self):
@@ -104,6 +108,8 @@ class CitizenAgent(mesa.Agent):
             self.random_path_choice(current_node)
         elif self.decision_making_mode == CitizenDecisionMakingMode.DIJIKSTRA:
             self.dijikstra_path_choice(current_node)
+        elif self.decision_making_mode == CitizenDecisionMakingMode.FOLLOWER:
+            self.follower_path_choice(current_node);
 
 
     def random_path_choice(self, current_node):
@@ -133,6 +139,19 @@ class CitizenAgent(mesa.Agent):
         else:
             _, _, path = min(reachable_targets, key=lambda x: x[1])
             self.current_edge = (current_node, path[1])
+    
+    def follower_path_choice(self, current_node):
+        """
+        Copies the end node of any agent found on the same edge.
+        If there're none agents with the same start node, picks path at random.
+        """
+        for agent in self.model.agents:
+            if agent.current_edge[0] == current_node:
+                self.current_edge = (current_node, agent.current_edge[1])
+                break
+        if self.current_edge[1] is None:
+            neighbors = list(self.model.space.G.neighbors(current_node))
+            self.current_edge = (current_node, random.choice(neighbors))
 
     def evacuate(self):
         """
