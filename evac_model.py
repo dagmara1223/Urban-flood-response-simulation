@@ -27,7 +27,7 @@ class TestModel(mesa.Model):
         self.water_maps = self.load_water_maps("Data")
         self.nrows, self.ncols = self.water_maps[0].shape
 
-        with rasterio.open("krakow_merged.tif") as src:
+        with rasterio.open(dem_path) as src:
             height = src.read(1)
         self.height = height[2000:3200, 3500:4800]
         self.height = self.height[::6, ::6]
@@ -94,7 +94,7 @@ class TestModel(mesa.Model):
             f.write(f"Unsafe edges: {unsafe_edges}/{self.space.G.number_of_edges()}\n")
         
     def step(self):
-        if self.count%5 == 0:
+        if self.count%10 == 0:
             self.flood_step() # Update water depth on graph nodes, not shure if should be done every step
 
         if self.count%5 == 0:
@@ -142,12 +142,12 @@ class TestModel(mesa.Model):
         ax.imshow(self.height, cmap='terrain', origin='upper') 
         ax.imshow(self.water, cmap='Blues', alpha=0.6, origin='upper', vmin=0, vmax=np.max(self.water)/3)
         
-        nx.draw_networkx_nodes(G, pos, nodelist=safety_spot, node_size=100, label='Safe Nodes', node_color='green')
-        nx.draw_networkx_edges(G, pos, edgelist=safe_edges, edge_color='black', width=2, label='Safe Roads')
-        nx.draw_networkx_edges(G, pos, edgelist=unsafe_edges, edge_color='red', width=2, label='Unsafe Roads')
+        nx.draw_networkx_nodes(G, pos, nodelist=safety_spot, node_size=50, label='Safe Nodes', node_color='green')
+        nx.draw_networkx_edges(G, pos, edgelist=safe_edges, edge_color='black', width=0.5, label='Safe Roads')
+        nx.draw_networkx_edges(G, pos, edgelist=unsafe_edges, edge_color='red', width=0.5, label='Unsafe Roads')
 
-        plt.scatter(agent_positions_x, agent_positions_y, c='blue', s=20, label='Agents', zorder=2)
-        plt.scatter(rescue_agents_x, rescue_agents_y, c='purple', s=20, label='Rescue Agents', zorder=2)
+        plt.scatter(agent_positions_x, agent_positions_y, c='blue', s=10, label='Agents', zorder=2)
+        plt.scatter(rescue_agents_x, rescue_agents_y, c='purple', s=10, label='Rescue Agents', zorder=2)
 
         plt.legend()
         plt.title("Road network with agents")
@@ -163,6 +163,7 @@ def build_example_graph(path):
     for n, data in G.nodes(data=True):
         data['pos'] = (float(data['x']), float(data['y']))
         data['pos_array'] = (int(data['pos_array_x']), int(data['pos_array_y']))
+    G.remove_edges_from(nx.selfloop_edges(G))
     return G
 
 
