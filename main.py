@@ -51,8 +51,10 @@ if __name__ == "__main__":
         os.makedirs(folder_path, exist_ok=True)
         log_path = os.path.join(folder_path, "log.txt")
 
-        
-        model = Model(n_agents=n_agents, n_rescue_agents=n_rescue_agents, roads_graph=G, dem_path=dem_path, log_path=folder_path)
+        flood_model = None
+        if run_flood_simulation:
+            flood_model = FloodModel(dem_path, k=k, area_bounds=area_bounds, rain_block=rain_block)
+        model = Model(n_agents=n_agents, n_rescue_agents=n_rescue_agents, roads_graph=G, dem_path=dem_path, log_path=folder_path, flood_model=flood_model)
         
         for t in range(200):
             with open(log_path, "a") as f:

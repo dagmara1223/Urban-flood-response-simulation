@@ -8,12 +8,12 @@ from rasterio.transform import rowcol
 from agent_model.citizens.citizen_agent import CitizenAgent
 from agent_model.call_center_agent import CallCenterAgent
 from agent_model.rescue_agent import RescueAgent
-#from flood_agent.model.model import flood_step
+from flood_agent.model.model import FloodModel
 import os
 from datetime import datetime
 
 class Model(mesa.Model):
-    def __init__(self, n_agents, n_rescue_agents, roads_graph, dem_path, log_path):
+    def __init__(self, n_agents, n_rescue_agents, roads_graph, dem_path, log_path, flood_model):
         super().__init__()
         self.count = 0
         self.log_path = os.path.join(log_path, "log.txt")
@@ -24,25 +24,11 @@ class Model(mesa.Model):
         self.call_center = CallCenterAgent(self)
         self.safety_spot = [n for n in self.space.G.nodes if n in [13, 40]]  # Example of a safe spot node
 
-        self.water_maps = self.load_water_maps("Data")
-        self.nrows, self.ncols = self.water_maps[0].shape
+        self.flood_model = flood_model
+        if flood_model is not None:
+            self.height = flood_model.area
+            self.water = flood_model.water
 
-        with rasterio.open(dem_path) as src:
-            height = src.read(1)
-        self.height = height[2000:3200, 3500:4800]
-        self.height = self.height[::6, ::6]
-
-        # mapowanie pierwszego kroku
-        self.water = self.water_maps[0]
-
-    def load_water_maps(self, folder_path):
-        """Wczytuje wszystkie zapisane pliki .npy z symulacji powodzi i sortuje je rosnąco po numerze kroku"""
-        files = sorted(
-            [f for f in os.listdir(folder_path) if f.endswith(".npy")],
-            key=lambda x: int(x.split("_")[-1].split(".")[0])
-        )
-        water_maps = [np.load(os.path.join(folder_path, f)) for f in files]
-        return water_maps
     
     def create_agents(self, n: int, n2: int):
         # Create 'n' citizen agents and assign them random starting nodes
@@ -69,10 +55,8 @@ class Model(mesa.Model):
         Update flood simulation and map depth values to the road network.
         """
         # --- Flood update ---
-        if self.count < len(self.water_maps):
-            self.water = self.water_maps[self.count]
-        else:
-            self.water = self.water_maps[-1]
+        self.flood_model.step()
+        self.water = self.flood_model.water
 
         for n, data in self.space.G.nodes(data=True):
             col, row = data['pos_array']
@@ -94,8 +78,9 @@ class Model(mesa.Model):
             f.write(f"Unsafe edges: {unsafe_edges}/{self.space.G.number_of_edges()}\n")
         
     def step(self):
-        if self.count%10 == 0:
-            self.flood_step() # Update water depth on graph nodes
+        if self.count%1 == 0:
+            if self.flood_model is not None:
+                self.flood_step() # Update water depth on graph nodes
 
         if self.count%5 == 0:
             self.call_center.step()
@@ -139,8 +124,9 @@ class Model(mesa.Model):
             agent_positions_x.append(x)
             agent_positions_y.append(y)
 
-        ax.imshow(self.height, cmap='terrain', origin='upper') 
-        ax.imshow(self.water, cmap='Blues', alpha=0.6, origin='upper', vmin=0, vmax=np.max(self.water)/3)
+        if self.flood_model is not None:
+            ax.imshow(self.height, cmap='terrain', origin='upper') 
+            ax.imshow(self.water, cmap='Blues', alpha=0.6, origin='upper', vmin=0, vmax=np.max(self.water)/3)
         
         nx.draw_networkx_nodes(G, pos, nodelist=safety_spot, node_size=50, label='Safe Nodes', node_color='green')
         nx.draw_networkx_edges(G, pos, edgelist=safe_edges, edge_color='black', width=0.5, label='Safe Roads')
