@@ -11,6 +11,7 @@ from rasterio.features import rasterize
 from shapely.geometry import box
 from pyproj import Transformer
 from shapely.ops import transform as shp_transform
+from pyproj import CRS
 
 """
 Uproszczony model przepływu powierzchniowego.
@@ -35,160 +36,195 @@ Zasada przeplywu:
        Q(i,j→m,n) = k * max(0, Δz)
 4. Suma odpływów z komórki = suma dopływów do sąsiadów
 """
+class FloodModel:
+    def __init__(self, path_to_dem: str, k: float, area_bounds:tuple=(2000, 3200, 3500, 4800), rain_block:list=[(6,6), (12,3), (3,15), (6,4)]):
+        self.height, self.transform, self.raster_crs = self.open_dem(path_to_dem)
+        self.area, self.water, self.roads, self.roads_mask, self.river_mask = self.get_roads_and_rivers(area_bounds)
+        self.k = k
+        self.rain_series = self.get_rain_series(rain_block)
+        self.current_rain_index = 0
+        self.overflow_triggered = False  # sygnał czy już było przelanie
 
-# , rain: float= 0.0 - usuniety argument
-def flood_step(height: np.ndarray, water: np.ndarray, k: float, roads_mask) -> np.ndarray:
-    total_level = height + water
-    new_water = water.copy()
+    def step(self):
+        if self.current_rain_index < len(self.rain_series):
+            rain_m = self.rain_series[self.current_rain_index]
+            self.water += rain_m
+        self.current_rain_index += 1
 
-    for i in range(1, height.shape[0] - 1):
-        for j in range(1, height.shape[1] - 1):
-            neighbors = total_level[i-1:i+2, j-1:j+2]
-            diff = total_level[i, j] - neighbors
+        if self.current_rain_index % 5 == 0:
+            self.water = self.flood_step(self.area, self.water, self.k, self.roads_mask)
+        
+        # sprawdzamy overflow wisly
+        if (not self.overflow_triggered) and (np.max(self.water[self.river_mask]) > 1.5):
+            print(f"*** UWAGA: Wisła PRZELAŁA WAŁY! (krok={t}, czas={t*10} minut) ***")
+            
+            # zwiększamy przepływ globalnie - wisla pcha szybciej wode
+            self.k = 0.25
+            
+            # efekt gwałtownego wylania
+            # water[rzeka sąsiadująca] += 0.4 m
+        
+            # piksele sąsiadujące z river_mask
+            from scipy.ndimage import binary_dilation
+            ring = binary_dilation(self.river_mask) & (~self.river_mask)
+            self.water[ring] += 0.4  # 40 cm nagle w okolicy wałów
+            
+            self.overflow_triggered = True
+    
+    # , rain: float= 0.0 - usuniety argument
+    def flood_step(self, height: np.ndarray, water: np.ndarray, k: float, roads_mask) -> np.ndarray:
+        total_level = height + water
+        new_water = water.copy()
 
-            # przepływ tylko w dół (Δz > 0)
-            flow = np.clip(diff, 0, None)
+        for i in range(1, height.shape[0] - 1):
+            for j in range(1, height.shape[1] - 1):
+                neighbors = total_level[i-1:i+2, j-1:j+2]
+                diff = total_level[i, j] - neighbors
 
-            # sumujemy wypływy, pomijając środkową komórkę
-            flow_sum = flow.sum() - flow[1,1]
+                # przepływ tylko w dół (Δz > 0)
+                flow = np.clip(diff, 0, None)
 
-            if flow_sum > 0 and water[i,j] > 0:
-                # współczynnik przepływu (drogi szybciej)
-                local_k = k * (2.0 if roads_mask[i,j] else 1.0)
+                # sumujemy wypływy, pomijając środkową komórkę
+                flow_sum = flow.sum() - flow[1,1]
 
-                # normalizacja – rozdzielamy proporcjonalnie
-                flow_norm = flow / flow_sum
+                if flow_sum > 0 and water[i,j] > 0:
+                    # współczynnik przepływu (drogi szybciej)
+                    local_k = k * (2.0 if roads_mask[i,j] else 1.0)
 
-                # ile wody wypływa z tej komórki
-                outflow = local_k * water[i,j]
+                    # normalizacja – rozdzielamy proporcjonalnie
+                    flow_norm = flow / flow_sum
 
-                # aktualizacja
-                new_water[i,j] -= outflow
-                new_water[i-1:i+2, j-1:j+2] += flow_norm * outflow
-    return np.clip(new_water,0,None)
+                    # ile wody wypływa z tej komórki
+                    outflow = local_k * water[i,j]
 
-# polaczenie ze soba pobranych obszarow tiff
-tiffs = glob.glob("dem/*.tiff")
-src_files_to_mosaic = []
-for fp in tiffs:
-    src = rasterio.open(fp)
-    src_files_to_mosaic.append(src)
+                    # aktualizacja
+                    new_water[i,j] -= outflow
+                    new_water[i-1:i+2, j-1:j+2] += flow_norm * outflow
+        return np.clip(new_water,0,None)
+    
+    def open_dem(self, dem_path: str):
+        with rasterio.open(dem_path) as src:
+            height = src.read(1)
+            transform = src.transform   # do późniejszego odczytu piksel_size
+            pix_size_x = abs(transform[0])   # [m/pixel]
+            pix_size_y = abs(transform[4]) 
 
-mosaic, out_transform = merge(src_files_to_mosaic)
+            raster_crs = src.crs
+            if src.crs.to_epsg() is None:
+                raster_crs = CRS.from_epsg(2180)  # domyślnie EPSG:2180 jeśli brak CRS
+        return height, transform, raster_crs
+    
+    def get_roads_and_rivers(self, area_bounds:tuple):
+        #obszar rynku 
+        area = self.height[area_bounds[0]:area_bounds[1], area_bounds[2]:area_bounds[3]]
+        area = area[::6, ::6]
 
-out_meta = src.meta.copy()
-out_meta.update({
-    "driver": "GTiff",
-    "height": mosaic.shape[1],
-    "width": mosaic.shape[2],
-    "transform": out_transform
-})
+        water = np.zeros_like(area, dtype=float)
 
-# zapis połączonego DEM
-# with rasterio.open("krakow_merged.tif", "w", **out_meta) as dest:
-#     dest.write(mosaic)
+        # ------------------ area drog --------------------------------------------------------
 
+        r0, r1 = area_bounds[0], area_bounds[1]
+        c0, c1 = area_bounds[2], area_bounds[3]
 
-with rasterio.open("krakow_merged.tif") as src:
-    height = src.read(1)
-    transform = src.transform   # do późniejszego odczytu piksel_size
-    pix_size_x = abs(transform[0])   # [m/pixel]
-    pix_size_y = abs(transform[4]) 
-
-    raster_crs = src.crs
-   
-
-#obszar rynku 
-rynek = height[2000:3200, 3500:4800]
-rynek = rynek[::6, ::6]
-
-water = np.zeros_like(rynek, dtype=float)
-
-# ------------------ area drog --------------------------------------------------------
-
-r0, r1 = 1400, 2600
-c0, c1 = 3800, 5000
-
-# współrzędne geograficzne tego obszaru
-x_min, y_max = xy(transform, r0, c0)
-x_max, y_min = xy(transform, r1, c1)
+        # współrzędne geograficzne tego obszaru
+        x_min, y_max = xy(self.transform, r0, c0)
+        x_max, y_min = xy(self.transform, r1, c1)
 
 
-# pobieramy bounding box w DEM CRS
-bbox_poly = box(x_min, y_min, x_max, y_max)
+        # pobieramy bounding box w DEM CRS
+        bbox_poly = box(x_min, y_min, x_max, y_max)
 
-# pobieramy drogi w WGS84
-to_wgs84 = Transformer.from_crs(raster_crs, "EPSG:4326", always_xy=True).transform
-bbox_poly_wgs = shp_transform(to_wgs84, bbox_poly)
+        # pobieramy drogi w WGS84
+        to_wgs84 = Transformer.from_crs(self.raster_crs, "EPSG:4326", always_xy=True).transform
+        bbox_poly_wgs = shp_transform(to_wgs84, bbox_poly)
 
-gdf_roads = ox.features_from_polygon(bbox_poly_wgs, {"highway": True})
+        gdf_roads = ox.features_from_polygon(bbox_poly_wgs, {"highway": True})
 
-# projekcja dróg do CRS DEM
-roads = gdf_roads.to_crs(raster_crs)
-roads["geometry"] = roads.buffer(5)
+        # projekcja dróg do CRS DEM
+        roads = gdf_roads.to_crs(self.raster_crs)
+        roads["geometry"] = roads.buffer(5)
 
-# rasteryzacja dróg na pełny DEM 
-roads_raster_full = rasterize(
-    [(geom, 1) for geom in roads.geometry],
-    out_shape=height.shape,
-    transform=transform,
-    fill=0
-)
+        # rasteryzacja dróg na pełny DEM 
+        roads_raster_full = rasterize(
+            [(geom, 1) for geom in roads.geometry],
+            out_shape=self.height.shape,
+            transform=self.transform,
+            fill=0
+        )
 
-# wycinek jak dla rynku - wazne - do zmiany gdy zmienia sie obszar height
-roads_rynek = roads_raster_full[2000:3200, 3500:4800]
+        # wycinek jak dla rynku - wazne - do zmiany gdy zmienia sie obszar height
+        roads = roads_raster_full[area_bounds[0]:area_bounds[1], area_bounds[2]:area_bounds[3]]
 
-# downsampling taki jak przy glownym obszarze
-roads_rynek = roads_rynek[::6, ::6]
+        # downsampling taki jak przy glownym obszarze
+        roads = roads[::6, ::6]
 
-# ------------------ koniec area drog ---------------------------------------------
-roads_mask = roads_rynek.astype(bool)
+        # ------------------ koniec area drog ---------------------------------------------
+        roads_mask = roads.astype(bool)
 
-# ------------------ area maski wisly ---------------------------------------------
-# pobieram wisle
-gdf_river = ox.features_from_polygon(bbox_poly_wgs, {"waterway": "river"})
+        # ------------------ area maski wisly ---------------------------------------------
+        # pobieram wisle
+        gdf_river = ox.features_from_polygon(bbox_poly_wgs, {"waterway": "river"})
 
-# filtr tylko wisla - nie chcemy zalapania sie innej rzeki - Vistula
-gdf_river = gdf_river[
-    gdf_river.get("name", "").str.contains("Wis", case=False, na=False) |
-    gdf_river.get("name", "").str.contains("Vist", case=False, na=False)
-]
+        # filtr tylko wisla - nie chcemy zalapania sie innej rzeki - Vistula
+        gdf_river = gdf_river[
+            gdf_river.get("name", "").str.contains("Wis", case=False, na=False) |
+            gdf_river.get("name", "").str.contains("Vist", case=False, na=False)
+        ]
 
-# jeśli pusta 
-if gdf_river.empty:
-    gdf_river = ox.features_from_polygon(bbox_poly_wgs, {"water": "river"})
+        # jeśli pusta 
+        if gdf_river.empty:
+            gdf_river = ox.features_from_polygon(bbox_poly_wgs, {"water": "river"})
 
-# projekcja do CRS DEM
-river = gdf_river.to_crs(raster_crs)
+        # projekcja do CRS DEM
+        river = gdf_river.to_crs(self.raster_crs)
 
-# bufor – bo linia rzeki ma szerokość
-river["geometry"] = river.buffer(30)  # 15 m – można dać 20, 30 itd do zmian
+        # bufor – bo linia rzeki ma szerokość
+        river["geometry"] = river.buffer(30)  # 15 m – można dać 20, 30 itd do zmian
 
-river_raster_full = rasterize(
-    [(geom, 1) for geom in river.geometry],
-    out_shape=height.shape,
-    transform=transform,
-    fill=0
-)
+        river_raster_full = rasterize(
+            [(geom, 1) for geom in river.geometry],
+            out_shape=self.height.shape,
+            transform=self.transform,
+            fill=0
+        )
 
-# wycinek rynku
-river_rynek = river_raster_full[2000:3200, 3500:4800]
-river_rynek = river_rynek[::6, ::6]
+        # wycinek rynku
+        river_rynek = river_raster_full[area_bounds[0]:area_bounds[1], area_bounds[2]:area_bounds[3]]
+        river_rynek = river_rynek[::6, ::6]
 
-# maska wisły
-river_mask = river_rynek.astype(bool)
+        # maska wisły
+        river_mask = river_rynek.astype(bool)
 
-# startowy poziom rzeki
-water[river_mask] = 0.50  # 50 cm wody w korycie na starcie
-# ----------------- koniec maski wisly ------------------------------------------
+        # startowy poziom rzeki
+        water[river_mask] = 0.50  # 50 cm wody w korycie na starcie
+        # ----------------- koniec maski wisly ------------------------------------------
+        return area, water, roads, roads_mask, river_mask
 
-# dodajemy opady 
-dt_seconds = 600.0  # co 10 min
-dt_hours = dt_seconds / 3600.0
+    def get_rain_series(self, rain_block:list):
+        # dodajemy opady
+        dt_seconds = 600.0  # co 10 min
+        dt_hours = dt_seconds / 3600.0
 
-# funkcja mm/h -> metry slupa wody dodane w 1 iteracji 
-def mmph_to_m_per_iteration(mm_per_hour: float)->float:
-    return (mm_per_hour / 1000.0)*dt_hours # czyli mm->m i mnozymy przez czas kroku
+        # funkcja mm/h -> metry slupa wody dodane w 1 iteracji 
+        def mmph_to_m_per_iteration(mm_per_hour: float)->float:
+            return (mm_per_hour / 1000.0)*dt_hours # czyli mm->m i mnozymy przez czas kroku
+
+        rain_series = [] #seria intensywnosci per iteracja 
+        for hours, mmph in rain_block:
+            steps = int(np.ceil(hours / dt_hours))
+            rain_series.extend([mmph_to_m_per_iteration(mmph)] * steps)
+
+        total_mm = sum(h*mmph for h, mmph in rain_block)
+        print(f"Łączny opad scenariusza ≈ {total_mm} mm")
+        return rain_series
+
+
+k = 0.15 # startowo 
+
+dem_path = "Data/krakow_merged.tif"
+
+# rynek
+area_bounds=(2000, 3200, 3500, 4800)
 
 # scenariusz odwzorowuje realne sumy opadów z powodzi 2010 w Krakowie mamy ≈141 mm
 rain_block = [
@@ -198,57 +234,24 @@ rain_block = [
     (6,4) # 6h po 4 mm/h - schodzenie
 ]
 
-rain_series = [] #seria intensywnosci per iteracja 
-for hours, mmph in rain_block:
-    steps = int(np.ceil(hours / dt_hours))
-    rain_series.extend([mmph_to_m_per_iteration(mmph)] * steps)
+model = FloodModel(dem_path, k=k, area_bounds=area_bounds, rain_block=rain_block)
 
-total_mm = sum(h*mmph for h, mmph in rain_block)
-print(f"Łączny opad scenariusza ≈ {total_mm} mm")
-
-k = 0.15 # startowo 
-overflow_triggered = False  # sygnał czy już było przelanie
 plt.figure(figsize=(10,6))
-for t, rain_m in enumerate(rain_series):
-
-    # deszcz
-    water += rain_m
-
-    # przepływ co X kroków
-    if t % 5 == 0:
-        water = flood_step(rynek, water, k=k, roads_mask=roads_mask)
-        print(f"{t}: max={np.max(water):.3f} m, mean={np.mean(water):.3f} m")
-
-    # sprawdzamy overflow wisly
-    if (not overflow_triggered) and (np.max(water[river_mask]) > 1.5):
-        print(f"*** UWAGA: Wisła PRZELAŁA WAŁY! (krok={t}, czas={t*10} minut) ***")
-        
-        # zwiększamy przepływ globalnie - wisla pcha szybciej wode
-        k = 0.25
-        
-        # efekt gwałtownego wylania
-        # water[rzeka sąsiadująca] += 0.4 m
-    
-        # piksele sąsiadujące z river_mask
-        from scipy.ndimage import binary_dilation
-        ring = binary_dilation(river_mask) & (~river_mask)
-        water[ring] += 0.4  # 40 cm nagle w okolicy wałów
-        
-        overflow_triggered = True
+for t in range(len(model.rain_series)):
+    model.step()
 
     # animacja co 20 kroków
     if t % 20 == 0:
         plt.clf()
 
         #plt.imshow(roads_rynek, cmap="binary", alpha=0.18, origin="upper")
-        plt.imshow(roads_rynek, cmap="gray", alpha=0.3)
-        plt.contour(roads_rynek, levels=[0.5], colors='black', linewidths=0.5)
+        plt.imshow(model.roads, cmap="gray", alpha=0.3)
+        plt.contour(model.roads, levels=[0.5], colors='black', linewidths=0.5)
 
         # terrain
-        im1 = plt.imshow(rynek, cmap='terrain', origin='upper')
-
+        im1 = plt.imshow(model.area, cmap='terrain', origin='upper')
         # water overlay
-        im2 = plt.imshow(water, cmap='Blues', alpha=0.65, origin='upper')
+        im2 = plt.imshow(model.water, cmap='Blues', alpha=0.65, origin='upper')
 
         # legenda 1 (wysokość terenu)
         cbar1 = plt.colorbar(im1, fraction=0.046, pad=0.04)
@@ -265,3 +268,24 @@ plt.show()
 
 
 
+'''
+# polaczenie ze soba pobranych obszarow tiff
+tiffs = glob.glob("dem/*.tiff")
+src_files_to_mosaic = []
+for fp in tiffs:
+    src = rasterio.open(fp)
+    src_files_to_mosaic.append(src)
+
+mosaic, out_transform = merge(src_files_to_mosaic)
+
+out_meta = src.meta.copy()
+out_meta.update({
+    "driver": "GTiff",
+    "height": mosaic.shape[1],
+    "width": mosaic.shape[2],
+    "transform": out_transform
+})
+'''
+# zapis połączonego DEM
+# with rasterio.open("krakow_merged.tif", "w", **out_meta) as dest:
+#     dest.write(mosaic)
