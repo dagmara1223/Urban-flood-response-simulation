@@ -95,7 +95,7 @@ class Model(mesa.Model):
         
     def step(self):
         if self.count%10 == 0:
-            self.flood_step() # Update water depth on graph nodes, not shure if should be done every step
+            self.flood_step() # Update water depth on graph nodes
 
         if self.count%5 == 0:
             self.call_center.step()
@@ -156,40 +156,3 @@ class Model(mesa.Model):
         plt.pause(0.2)
 
 
-def build_example_graph(path):
-    # Tworzenie TESTOWEGO grafu drogowego
-    G = nx.read_graphml(path)
-    G = nx.convert_node_labels_to_integers(G)
-    for n, data in G.nodes(data=True):
-        data['pos'] = (float(data['x']), float(data['y']))
-        data['pos_array'] = (int(data['pos_array_x']), int(data['pos_array_y']))
-    G.remove_edges_from(nx.selfloop_edges(G))
-    return G
-
-
-if __name__ == "__main__":
-    curr_time = datetime.now().strftime("%H_%M_%S")
-    folder_path = f"output/run_{curr_time}"
-    os.makedirs(folder_path, exist_ok=True)
-    log_path = os.path.join(folder_path, "log.txt")
-
-    graph_path = 'Data/krakow_roads2.graphml'
-    dem_path = 'Data/krakow_merged.tif'
-
-    n_agents = 150
-    n_rescue_agents = 5
-    G = build_example_graph(graph_path)
-    model = Model(n_agents=n_agents, n_rescue_agents=n_rescue_agents, roads_graph=G, dem_path=dem_path, log_path=folder_path)
-    
-    for t in range(200):
-        with open(log_path, "a") as f:
-            f.write(f"\n--- Step {t} ---\n")
-        print(f"--- Step {t} ---")
-        model.step()
-        for a in model.agents:
-            if isinstance(a, CitizenAgent):
-                with open(log_path, "a") as f:
-                    f.write(f"Agent {a.unique_id}: node={a.current_edge[0]}, state={a.state}\n")
-            elif isinstance(a, RescueAgent):
-                with open(log_path, "a") as f:
-                    f.write(f"RescueAgent {a.unique_id}: node={a.current_edge[0]}, carrying={[c.unique_id for c in a.carrying]}\n")

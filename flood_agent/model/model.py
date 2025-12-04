@@ -219,53 +219,6 @@ class FloodModel:
         return rain_series
 
 
-k = 0.15 # startowo 
-
-dem_path = "Data/krakow_merged.tif"
-
-# rynek
-area_bounds=(2000, 3200, 3500, 4800)
-
-# scenariusz odwzorowuje realne sumy opadów z powodzi 2010 w Krakowie mamy ≈141 mm
-rain_block = [
-    (6,6), # 6 h po 6mm/h - front pierwszy
-    (12,3), # 12 h po 3 mm/h - dlugotrwaly deszcz
-    (3,15), # 3h po 15 mm/h - najsilniejsze opady -> podtopienia
-    (6,4) # 6h po 4 mm/h - schodzenie
-]
-
-model = FloodModel(dem_path, k=k, area_bounds=area_bounds, rain_block=rain_block)
-
-plt.figure(figsize=(10,6))
-for t in range(len(model.rain_series)):
-    model.step()
-
-    # animacja co 20 kroków
-    if t % 20 == 0:
-        plt.clf()
-
-        #plt.imshow(roads_rynek, cmap="binary", alpha=0.18, origin="upper")
-        plt.imshow(model.roads, cmap="gray", alpha=0.3)
-        plt.contour(model.roads, levels=[0.5], colors='black', linewidths=0.5)
-
-        # terrain
-        im1 = plt.imshow(model.area, cmap='terrain', origin='upper')
-        # water overlay
-        im2 = plt.imshow(model.water, cmap='Blues', alpha=0.65, origin='upper')
-
-        # legenda 1 (wysokość terenu)
-        cbar1 = plt.colorbar(im1, fraction=0.046, pad=0.04)
-        cbar1.set_label("Wysokość terenu [m n.p.m.]")
-
-        # legenda 2 (głębokość wody)
-        cbar2 = plt.colorbar(im2, fraction=0.046, pad=0.12)
-        cbar2.set_label("Głębokość wody [m]")
-
-        plt.title(f"Deszcz + spływ powierzchniowy — krok {t}")
-        plt.pause(0.5)
-plt.tight_layout()
-plt.show()
-
 
 
 '''
