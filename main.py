@@ -1,18 +1,19 @@
 from datetime import datetime
 import os
 import networkx as nx
-#from evac_model import Model
-from flood_test2 import FloodModel
+from evac_model import Model, animate_simulation, save_stats_to_csv
+from flood_agent.model.model import FloodModel
 import matplotlib.pyplot as plt
 import numpy as np
+
 
 def build_example_graph(path):
     # Tworzenie grafu drogowego
     G = nx.read_graphml(path)
     G = nx.convert_node_labels_to_integers(G)
     for n, data in G.nodes(data=True):
-        data['pos'] = (float(data['x']), float(data['y']))
-        data['pos_array'] = (int(data['pos_array_x']), int(data['pos_array_y']))
+        data['pos'] = (float(data['x']/4), float(data['y']/4))
+        data['pos_array'] = (int(data['pos_array_x']/4), int(data['pos_array_y']/4))
     G.remove_edges_from(nx.selfloop_edges(G))
     return G
 
@@ -20,11 +21,11 @@ def build_example_graph(path):
 if __name__ == "__main__":
 
     run_flood_simulation = True
-    run_evacuation_simulation = False
+    run_evacuation_simulation = True
 
     # Flood simulation parameters ------------------------------------------------------------
     k = 0.15 # startowo 
-    dem_path = "krakow_merged.tif"
+    dem_path = "Data/krakow_merged.tif"
     # rynek
     area_bounds=(0, 4838, 0, 11138)
     #area_bounds = (2000, 3200, 3500, 4800)
@@ -38,8 +39,8 @@ if __name__ == "__main__":
     #-------------------------------------------------------------------------------------------
 
     # Evacuation simulation parameters -------------------------------------------------------
-    graph_path = 'krakow_roads2.graphml'
-    dem_path = 'krakow_merged.tif'
+    graph_path = 'Data/krakow_roads_all.graphml'
+    dem_path = 'Data/krakow_merged.tif'
     n_agents = 150
     n_rescue_agents = 5
     G = build_example_graph(graph_path)
@@ -48,21 +49,22 @@ if __name__ == "__main__":
     # Run evacuation simulation ---------------------------------------------------------------
     if run_evacuation_simulation:
         # create output folder with timestamp
-        curr_time = datetime.now().strftime("%H_%M_%S")
+        curr_time = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
         folder_path = f"output/run_{curr_time}"
         os.makedirs(folder_path, exist_ok=True)
-        log_path = os.path.join(folder_path, "log.txt")
 
         flood_model = None
         if run_flood_simulation:
             flood_model = FloodModel(dem_path, k=k, area_bounds=area_bounds, rain_block=rain_block)
-        model = Model(n_agents=n_agents, n_rescue_agents=n_rescue_agents, roads_graph=G, dem_path=dem_path, log_path=folder_path, flood_model=flood_model)
+        model = Model(n_agents=n_agents, n_rescue_agents=n_rescue_agents, roads_graph=G, dem_path=dem_path, flood_model=flood_model)
         
-        for t in range(200):
-            with open(log_path, "a") as f:
-                f.write(f"\n--- Step {t} ---\n")
-            print(f"--- Step {t} ---")
+        for t in range(100):
+            print(f"Step {t}")
             model.step()
+        
+        # Create animation
+        anim = animate_simulation(model, save_path=os.path.join(folder_path, "evacuation_simulation.gif"), interval=200) # 200 ms per frame = 5 fps
+        save_stats_to_csv(model, folder_path)
 
     # Run flood simulation (only if no evacuation) -------------------------------------------
     if run_flood_simulation and not run_evacuation_simulation:

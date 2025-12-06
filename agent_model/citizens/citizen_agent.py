@@ -70,11 +70,10 @@ class CitizenAgent(mesa.Agent):
         self.decision_making_mode = random.choice([CitizenDecisionMakingMode.RANDOM, CitizenDecisionMakingMode.DIJIKSTRA, CitizenDecisionMakingMode.DIJIKSTRA,
                                                    CitizenDecisionMakingMode.FOLLOWER, CitizenDecisionMakingMode.FOLLOWER])
 
-        self.max_speed = np.random.normal(1.5, 0.3)
+        self.max_speed = np.random.normal(1.5, 0.3) * 10 # m/s 10 seconds per step
         self.current_speed = self.max_speed
 
-        with open(self.model.log_path, "a") as f:
-                    f.write(f'I am an agent {self.unique_id}, hooray location: {self.current_edge} speed: {self.max_speed} mode: {self.decision_making_mode}\n')
+        
 
     def update_state(self, water_matrix: np.ndarray):
         pass
@@ -86,7 +85,9 @@ class CitizenAgent(mesa.Agent):
         if self.state == CitizenState.CRITICALLY_UNSAFE or self.state == CitizenState.RESCUED:
             return
         if self.current_edge[0] in self.model.safety_spot:
-            self.state = CitizenState.RESCUED
+            if self.state != CitizenState.UNSAFE:
+                self.model.stats["safety_arrival_times"].append(self.model.count)
+            self.state = CitizenState.SAFE
             return
         if self.current_edge[1] is None:
             self.choose_destination()
@@ -96,7 +97,7 @@ class CitizenAgent(mesa.Agent):
             return
         else:
             self.current_speed = self.max_speed * np.exp(-2 * water_depth)
-            self.current_speed = max(self.current_speed, 0.5)
+            self.current_speed = max(self.current_speed, 0.5 * 10)  # min speed 0.5 m/s
         self.evacuate()
 
     def choose_destination(self):

@@ -1,23 +1,21 @@
 import mesa
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 import networkx as nx
 import random 
-import rasterio
 from rasterio.transform import rowcol
-from agent_model.citizens.citizen_agent import CitizenAgent
+from agent_model.citizens.citizen_agent import CitizenAgent, CitizenState
 from agent_model.call_center_agent import CallCenterAgent
-from agent_model.rescue_agent import RescueAgent
+from agent_model.rescue_agent import RescueAgent, RescueState
 from flood_agent.model.model import FloodModel
 import os
 from datetime import datetime
 
 class Model(mesa.Model):
-    def __init__(self, n_agents, n_rescue_agents, roads_graph, dem_path, log_path, flood_model):
+    def __init__(self, n_agents, n_rescue_agents, roads_graph, dem_path, flood_model):
         super().__init__()
         self.count = 0
-        self.log_path = os.path.join(log_path, "log.txt")
-        self.log_path_time = os.path.join(log_path, "evac_time.txt")
 
         self.space = mesa.space.NetworkGrid(roads_graph) # Create a NetworkGrid based on the road graph
         self.create_agents(n=n_agents, n2=n_rescue_agents)
@@ -28,6 +26,27 @@ class Model(mesa.Model):
         if flood_model is not None:
             self.height = flood_model.area
             self.water = flood_model.water
+
+        self.visual_data = {
+            "agent_positions": [],  # lista słowników: {agent_id: (x, y), ...}
+            "rescue_positions": [],
+            "water": [],
+        }
+
+        self.stats = {
+            "safety_arrival_times": [], # czasy dotarcia do bezpiecznego miejsca
+            "rescue_response_time": [], # listy czasów reakcji ratowników
+            "rescue_to_safety_time": [], # listy czasów od ratunku do bezpieczeństwa
+
+            "safe_count": [],          # liczba osób bezpiecznych w danym kroku
+            "rescued_count": [],        # liczba osób uratowanych w danym kroku
+            "critically_unsafe_count": [],  # liczba ludzi w stanie krytycznym
+            "unsafe_count": [],          # liczba ludzi w stanie niebezpiecznym
+            "available_rescuers": [],   # liczba dostępnych ratowników
+            "on_mission_rescuers": [],  # liczba ratowników w misji
+            "carrying_rescuers": [],     # liczba ratowników transportujących poszkodowanych
+            "unsafe_edges": [],         # liczba zalanych krawędzi w grafie
+        }
 
     
     def create_agents(self, n: int, n2: int):
@@ -46,39 +65,33 @@ class Model(mesa.Model):
             self.agents.add(agent)
             self.space.place_agent(agent, start_node)
 
-        plt.ion()
-        self.fig, self.ax = plt.subplots(figsize=(10, 10))
-
     
     def flood_step(self):
         """
         Update flood simulation and map depth values to the road network.
         """
         # --- Flood update ---
-        self.flood_model.step()
+        self.flood_model.step(1)
         self.water = self.flood_model.water
 
         for n, data in self.space.G.nodes(data=True):
             col, row = data['pos_array']
-            depth = float(self.water[row, col])
-            data["depth"] = depth
+            try:
+                depth = float(self.water[row, col])
+                data["depth"] = depth
+            except IndexError:
+                data["depth"] = 0.0
 
         # --- Mark unsafe roads ---
-        unsafe_edges = 0
         for u, v, d in self.space.G.edges(data=True):
             node_depth = max(
                 self.space.G.nodes[u].get("depth", 0),
                 self.space.G.nodes[v].get("depth", 0),
             )
-            d["safe"] = "no" if node_depth > 0.5 else "yes"
-            if node_depth > 0.5:
-                unsafe_edges += 1
-                
-        with open(self.log_path, "a") as f:
-            f.write(f"Unsafe edges: {unsafe_edges}/{self.space.G.number_of_edges()}\n")
+            d["safe"] = "no" if node_depth > 0.5 else "yes"  
         
     def step(self):
-        if self.count%1 == 0:
+        if self.count%1000 == 999:
             if self.flood_model is not None:
                 self.flood_step() # Update water depth on graph nodes
 
@@ -91,23 +104,22 @@ class Model(mesa.Model):
         
         self.count += 1
 
+        self.stats["safe_count"].append(len([a for a in self.agents if isinstance(a, CitizenAgent) and a.state == CitizenState.SAFE]))
+        self.stats["rescued_count"].append(len([a for a in self.agents if isinstance(a, CitizenAgent) and a.state == CitizenState.RESCUED]))
+        self.stats["critically_unsafe_count"].append(len([a for a in self.agents if isinstance(a, CitizenAgent) and a.state == CitizenState.CRITICALLY_UNSAFE]))
+        self.stats["unsafe_count"].append(len([a for a in self.agents if isinstance(a, CitizenAgent) and a.state == CitizenState.UNSAFE]))
+        self.stats["available_rescuers"].append(len([a for a in self.agents if isinstance(a, RescueAgent) and a.state == RescueState.AVAILABLE]))
+        self.stats["on_mission_rescuers"].append(len([a for a in self.agents if isinstance(a, RescueAgent) and a.state == RescueState.ON_MISSION]))
+        self.stats["carrying_rescuers"].append(len([a for a in self.agents if isinstance(a, RescueAgent) and a.state == RescueState.CARRYING]))
+        self.stats["unsafe_edges"].append(len([e for e in self.space.G.edges(data=True) if e[2].get("safe") == "no"]))
+
+
     def visualise_step(self):
-        ax = self.ax
-        ax.clear()
-        G = self.space.G
-        safety_spot = self.safety_spot
-        agents = self.agents
-        pos = nx.get_node_attributes(G, "pos_array")        
+        agent_positions = {}
+        rescue_positions = {}
+        pos = nx.get_node_attributes(self.space.G, "pos_array")
 
-        safe_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get('safe') in ['yes']]
-        unsafe_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get('safe') in ['no']]
-
-        # Wizualizacja agentów
-        agent_positions_x = []
-        agent_positions_y = []
-        rescue_agents_x = []
-        rescue_agents_y = []
-        for agent in agents:
+        for agent in self.agents:
             if not isinstance(agent, (CitizenAgent, RescueAgent)):
                 continue
             x0, y0 = pos[agent.current_edge[0]]
@@ -118,27 +130,114 @@ class Model(mesa.Model):
             else:
                 x, y = x0, y0
             if isinstance(agent, RescueAgent):
-                rescue_agents_x.append(x)
-                rescue_agents_y.append(y)
-                continue
-            agent_positions_x.append(x)
-            agent_positions_y.append(y)
+                rescue_positions[agent.unique_id] = (x, y)
+            else:
+                agent_positions[agent.unique_id] = (x, y)
 
+        self.visual_data["agent_positions"].append(agent_positions)
+        self.visual_data["rescue_positions"].append(rescue_positions)
         if self.flood_model is not None:
-            ax.imshow(self.height, cmap='terrain', origin='upper') 
-            ax.imshow(self.water, cmap='Blues', alpha=0.6, origin='upper', vmin=0, vmax=np.max(self.water)/3)
-        
-        nx.draw_networkx_nodes(G, pos, nodelist=safety_spot, node_size=50, label='Safe Nodes', node_color='green')
-        nx.draw_networkx_edges(G, pos, edgelist=safe_edges, edge_color='black', width=0.5, label='Safe Roads')
-        nx.draw_networkx_edges(G, pos, edgelist=unsafe_edges, edge_color='red', width=0.5, label='Unsafe Roads')
+            self.visual_data["water"].append(self.water.copy())
 
-        plt.scatter(agent_positions_x, agent_positions_y, c='blue', s=10, label='Agents', zorder=2)
-        plt.scatter(rescue_agents_x, rescue_agents_y, c='purple', s=10, label='Rescue Agents', zorder=2)
 
-        plt.legend()
-        plt.title("Road network with agents")
 
-        plt.draw()  # Update figure
-        plt.pause(0.2)
+def animate_simulation(model, save_path, interval=200):
+    G = model.space.G
+    pos = nx.get_node_attributes(G, "pos_array")
+    safety_spot = model.safety_spot
+
+    fig, ax = plt.subplots(figsize=(10,10))
+
+    def update(frame):
+        ax.clear()
+
+        # rysuj wody
+        if model.flood_model is not None:
+            ax.imshow(model.height, cmap='terrain', origin='upper')
+            ax.imshow(model.visual_data["water"][frame], cmap='Blues', alpha=0.6, origin='upper')
+
+        # rysuj sieć dróg
+        safe_edges = [(u,v,d) for u,v,d in G.edges(data=True) if d.get('safe')=='yes']
+        unsafe_edges = [(u,v,d) for u,v,d in G.edges(data=True) if d.get('safe')=='no']
+        nx.draw_networkx_edges(G, pos, edgelist=[(u,v) for u,v,_ in safe_edges], edge_color='black', width=0.5)
+        nx.draw_networkx_edges(G, pos, edgelist=[(u,v) for u,v,_ in unsafe_edges], edge_color='red', width=0.5)
+        nx.draw_networkx_nodes(G, pos, nodelist=safety_spot, node_color='green', node_size=50)
+
+        # rysuj agentów
+        agent_positions = model.visual_data["agent_positions"][frame]
+        rescue_positions = model.visual_data["rescue_positions"][frame]
+        ax.scatter([p[0] for p in agent_positions.values()],
+                   [p[1] for p in agent_positions.values()],
+                   c='blue', s=10, label='Agents', zorder=2)
+        ax.scatter([p[0] for p in rescue_positions.values()],
+                   [p[1] for p in rescue_positions.values()],
+                   c='purple', s=10, label='Rescue Agents', zorder=2)
+
+        ax.set_title(f"Step {frame}")
+        ax.legend()
+
+    ani = animation.FuncAnimation(fig, update, frames=len(model.visual_data["agent_positions"]),
+                                  interval=interval)
+
+    # Zapisz jako GIF
+    ani.save(save_path, writer='pillow', fps=5)
+    plt.close(fig)
+    print(f"Animacja GIF zapisana: {save_path}")
+
+import os
+import csv
+import numpy as np
+import pandas as pd
+
+def save_stats_to_csv(model, folder_path):
+    os.makedirs(folder_path, exist_ok=True)
+
+    # --- 1. Zapis statystyk krokowych ---
+    step_data = pd.DataFrame({
+        "safe_count": model.stats["safe_count"],
+        "rescued_count": model.stats["rescued_count"],
+        "critically_unsafe_count": model.stats["critically_unsafe_count"],
+        "unsafe_count": model.stats["unsafe_count"],
+        "available_rescuers": model.stats["available_rescuers"],
+        "on_mission_rescuers": model.stats["on_mission_rescuers"],
+        "carrying_rescuers": model.stats["carrying_rescuers"],
+        "unsafe_edges": model.stats["unsafe_edges"],
+    })
+    step_file = os.path.join(folder_path, "step_stats.csv")
+    step_data.to_csv(step_file, index_label="step")
+
+    # --- 2. Zapis statystyk zdarzeniowych ---
+    event_stats = []
+
+    for key in ["safety_arrival_times", "rescue_response_time", "rescue_to_safety_time"]:
+        times = model.stats.get(key, [])
+        if times:
+            times_array = np.array(times)
+            stats_dict = {
+                "stat": key,
+                "count": len(times_array),
+                "mean": np.mean(times_array),
+                "median": np.median(times_array),
+                "min": np.min(times_array),
+                "max": np.max(times_array),
+                "std": np.std(times_array)
+            }
+        else:
+            stats_dict = {
+                "stat": key,
+                "count": 0,
+                "mean": np.nan,
+                "median": np.nan,
+                "min": np.nan,
+                "max": np.nan,
+                "std": np.nan
+            }
+        event_stats.append(stats_dict)
+
+    event_file = os.path.join(folder_path, "event_stats.csv")
+    pd.DataFrame(event_stats).to_csv(event_file, index=False)
+
+    print(f"Step stats saved to: {step_file}")
+    print(f"Event stats saved to: {event_file}")
 
 
