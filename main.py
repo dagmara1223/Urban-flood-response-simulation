@@ -1,9 +1,10 @@
 from datetime import datetime
 import os
 import networkx as nx
-from evac_model import Model
-from flood_agent.model.model import FloodModel
+#from evac_model import Model
+from flood_test2 import FloodModel
 import matplotlib.pyplot as plt
+import numpy as np
 
 def build_example_graph(path):
     # Tworzenie grafu drogowego
@@ -23,9 +24,10 @@ if __name__ == "__main__":
 
     # Flood simulation parameters ------------------------------------------------------------
     k = 0.15 # startowo 
-    dem_path = "Data/krakow_merged.tif"
+    dem_path = "krakow_merged.tif"
     # rynek
-    area_bounds=(2000, 3200, 3500, 4800)
+    area_bounds=(0, 4838, 0, 11138)
+    #area_bounds = (2000, 3200, 3500, 4800)
     # scenariusz odwzorowuje realne sumy opadów z powodzi 2010 w Krakowie mamy ≈141 mm
     rain_block = [
         (6,6), # 6 h po 6mm/h - front pierwszy
@@ -36,8 +38,8 @@ if __name__ == "__main__":
     #-------------------------------------------------------------------------------------------
 
     # Evacuation simulation parameters -------------------------------------------------------
-    graph_path = 'Data/krakow_roads2.graphml'
-    dem_path = 'Data/krakow_merged.tif'
+    graph_path = 'krakow_roads2.graphml'
+    dem_path = 'krakow_merged.tif'
     n_agents = 150
     n_rescue_agents = 5
     G = build_example_graph(graph_path)
@@ -65,37 +67,57 @@ if __name__ == "__main__":
     # Run flood simulation (only if no evacuation) -------------------------------------------
     if run_flood_simulation and not run_evacuation_simulation:
         
-
         model = FloodModel(dem_path, k=k, area_bounds=area_bounds, rain_block=rain_block)
 
         plt.figure(figsize=(10,6))
         for t in range(len(model.rain_series)):
-            model.step()
+            model.step(t)
 
-            # animacja co 20 kroków
-            if t % 20 == 0:
-                plt.clf()
+            if t % 10 == 0:
 
-                #plt.imshow(roads_rynek, cmap="binary", alpha=0.18, origin="upper")
-                plt.imshow(model.roads, cmap="gray", alpha=0.3)
-                plt.contour(model.roads, levels=[0.5], colors='black', linewidths=0.5)
+                fig, ax = plt.subplots(figsize=(12,6))
 
-                # terrain
-                im1 = plt.imshow(model.area, cmap='terrain', origin='upper')
-                # water overlay
-                im2 = plt.imshow(model.water, cmap='Blues', alpha=0.65, origin='upper')
+                # dem
+                ax.imshow(model.area, cmap='terrain',
+                        vmin=model.global_min,
+                        vmax=model.global_max)
 
-                # legenda 1 (wysokość terenu)
-                cbar1 = plt.colorbar(im1, fraction=0.046, pad=0.04)
-                cbar1.set_label("Wysokość terenu [m n.p.m.]")
+                # maska wody
+                vis_water = model.water.copy()
+                vis_water[model.roads_mask] = 0
+                water_mask = np.where(vis_water > 0.15, vis_water, np.nan)
 
-                # legenda 2 (głębokość wody)
-                cbar2 = plt.colorbar(im2, fraction=0.046, pad=0.12)
-                cbar2.set_label("Głębokość wody [m]")
+                ax.imshow(
+                    water_mask,
+                    cmap='Blues',
+                    alpha=0.7,
+                    vmin=0,
+                    vmax=1.0
+                )
 
-                plt.title(f"Deszcz + spływ powierzchniowy — krok {t}")
-                plt.pause(0.5)
-        plt.tight_layout()
-        plt.show()
+                # kontury woda glebsza 
+                try:
+                    contours = ax.contour(
+                        model.water,
+                        levels=[0.05,0.10,0.20,0.40,0.60],
+                        colors='blue',
+                        linewidths=0.6
+                    )
+                    ax.clabel(contours, inline=True, fontsize=6, fmt="%.2f m")
+                except:
+                    pass
 
+                ax.set_title(f"Krok {t} – Kraków (zalanie >2 cm)")
+                ax.axis("off")
+
+                outfile = f"frames/frame_{t:04d}.png"
+                fig.savefig(outfile, dpi=150, bbox_inches='tight')
+                plt.close(fig)
+
+                print("Zapisano:", outfile)
+
+
+
+        
+        
 
