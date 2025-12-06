@@ -12,6 +12,7 @@ from shapely.geometry import box
 from pyproj import Transformer
 from shapely.ops import transform as shp_transform
 from pyproj import CRS
+import scipy.ndimage as ndi
 
 """
 Uproszczony model przepływu powierzchniowego.
@@ -44,63 +45,112 @@ class FloodModel:
         self.rain_series = self.get_rain_series(rain_block)
         self.current_rain_index = 0
         self.overflow_triggered = False  # sygnał czy już było przelanie
+        self.river_idx = self.river_idx = np.argwhere(self.river_mask)
+        self.global_min = float(np.min(self.height))
+        self.global_max = float(np.max(self.height))
+        self.area_bounds = area_bounds
 
-    def step(self):
+    def select_river_section(self, x_min, x_max):
+        return self.river_idx[(self.river_idx[:,1] > x_min) & (self.river_idx[:,1] < x_max)]
+
+    def step(self, t):
+
+        # deszcz
+        # wisla dostaje 100% opadu, teren miejski tylko część 
         if self.current_rain_index < len(self.rain_series):
+
             rain_m = self.rain_series[self.current_rain_index]
-            self.water += rain_m
+
+            RUNOFF = 0.25  # 25% deszczu zostaje na powierzchni 
+            # rzeka – przyjmuje cały opad
+            self.water[self.river_mask] += rain_m
+
+            # miasto – infiltracja/kanalizacja → zostaje tylko 25%
+            self.water[~self.river_mask] += rain_m * RUNOFF
+
         self.current_rain_index += 1
 
+        # przeplyw co 5 krokow
         if self.current_rain_index % 5 == 0:
             self.water = self.flood_step(self.area, self.water, self.k, self.roads_mask)
-        
-        # sprawdzamy overflow wisly
-        if (not self.overflow_triggered) and (np.max(self.water[self.river_mask]) > 1.5):
+
+        #diagnostyka
+        if t % 10 == 0:
+            non_river = ~self.river_mask
+            max_outside = np.max(self.water[non_river])
+            count_outside = np.count_nonzero(self.water[non_river] > 0.001)
+
+            river_total = (self.area + self.water)[self.river_mask]
+            ring = ndi.binary_dilation(self.river_mask) & (~self.river_mask)
+            ring_total = (self.area + self.water)[ring]
+
+            print(f"\n[t={t}] DIAGNOSTYKA:")
+            print(f"  max water poza Wisłą = {max_outside:.4f} m")
+            print(f"  liczba komórek z wodą > 1 mm = {count_outside}")
+            print(f"  total_level rzeka: min={river_total.min():.2f}, max={river_total.max():.2f}")
+            print(f"  total_level wał:   min={ring_total.min():.2f}, max={ring_total.max():.2f}")
+
+        # przelanie walow
+        river_max_level = np.max(self.water[self.river_mask])
+
+        OVERFLOW_THRESHOLD = 1.0  # rzeka ma 1 m wody
+
+        if (not self.overflow_triggered) and (river_max_level > OVERFLOW_THRESHOLD):
+
             print(f"*** UWAGA: Wisła PRZELAŁA WAŁY! (krok={t}, czas={t*10} minut) ***")
-            
-            # zwiększamy przepływ globalnie - wisla pcha szybciej wode
+
+            # 1) więcej przepływu = przyspiesza zalewanie
             self.k = 0.25
-            
-            # efekt gwałtownego wylania
-            # water[rzeka sąsiadująca] += 0.4 m
-        
-            # piksele sąsiadujące z river_mask
-            from scipy.ndimage import binary_dilation
-            ring = binary_dilation(self.river_mask) & (~self.river_mask)
-            self.water[ring] += 0.4  # 40 cm nagle w okolicy wałów
-            
+
+            # 2) sąsiednie piksele rzeki czyli wały
+            ring = ndi.binary_dilation(self.river_mask) & (~self.river_mask)
+
+            # 3) woda wylewa się do sąsiednich pikseli
+            self.water[ring] += 0.3      # łagodne przelewanie
+            self.water[self.river_mask] -= 0.1  # część wody opuszcza koryto
+
             self.overflow_triggered = True
+
     
     # , rain: float= 0.0 - usuniety argument
-    def flood_step(self, height: np.ndarray, water: np.ndarray, k: float, roads_mask) -> np.ndarray:
-        total_level = height + water
+    def flood_step(self, height, water, k, roads_mask):
+        total = height + water
         new_water = water.copy()
 
-        for i in range(1, height.shape[0] - 1):
-            for j in range(1, height.shape[1] - 1):
-                neighbors = total_level[i-1:i+2, j-1:j+2]
-                diff = total_level[i, j] - neighbors
+        # parametry tłumienia
+        MIN_FLOW = 0.03   # woda poniżej 3 cm stoi w miejscu
+        FLOW_CAP = 0.20   # max 20% wody może wypłynąć z komórki
+        FRICTION = 0.45   # opór terenu (0.0 brak oporu, 1.0 ogromny opór)
 
-                # przepływ tylko w dół (Δz > 0)
+        for i in range(1, height.shape[0]-1):
+            for j in range(1, height.shape[1]-1):
+
+                if water[i,j] < MIN_FLOW:
+                    continue  # za mało wody aby popłynąć
+
+                neighbors = total[i-1:i+2, j-1:j+2]
+                diff = total[i,j] - neighbors
+
                 flow = np.clip(diff, 0, None)
 
-                # sumujemy wypływy, pomijając środkową komórkę
-                flow_sum = flow.sum() - flow[1,1]
+                total_flow = flow.sum() - flow[1,1]
+                if total_flow <= 0 or not np.isfinite(total_flow):
+                    continue
 
-                if flow_sum > 0 and water[i,j] > 0:
-                    # współczynnik przepływu (drogi szybciej)
-                    local_k = k * (2.0 if roads_mask[i,j] else 1.0)
+                # drogi → szybszy spływ
+                local_k = k * (1.8 if roads_mask[i,j] else 1.0)
 
-                    # normalizacja – rozdzielamy proporcjonalnie
-                    flow_norm = flow / flow_sum
+                # normalizacja i tłumienie
+                flow_norm = (flow / total_flow) * (1.0 - FRICTION)
 
-                    # ile wody wypływa z tej komórki
-                    outflow = local_k * water[i,j]
+                # ile maksymalnie może wypłynąć
+                outflow = min(local_k * water[i,j], FLOW_CAP * water[i,j])
 
-                    # aktualizacja
-                    new_water[i,j] -= outflow
-                    new_water[i-1:i+2, j-1:j+2] += flow_norm * outflow
-        return np.clip(new_water,0,None)
+                new_water[i,j] -= outflow
+                new_water[i-1:i+2, j-1:j+2] += flow_norm * outflow
+
+        return np.clip(new_water, 0, None)
+
     
     def open_dem(self, dem_path: str):
         with rasterio.open(dem_path) as src:
@@ -114,10 +164,11 @@ class FloodModel:
                 raster_crs = CRS.from_epsg(2180)  # domyślnie EPSG:2180 jeśli brak CRS
         return height, transform, raster_crs
     
+    
     def get_roads_and_rivers(self, area_bounds:tuple):
         #obszar rynku 
         area = self.height[area_bounds[0]:area_bounds[1], area_bounds[2]:area_bounds[3]]
-        area = area[::6, ::6]
+        area = area[::4, ::4]
 
         water = np.zeros_like(area, dtype=float)
 
@@ -156,7 +207,7 @@ class FloodModel:
         roads = roads_raster_full[area_bounds[0]:area_bounds[1], area_bounds[2]:area_bounds[3]]
 
         # downsampling taki jak przy glownym obszarze
-        roads = roads[::6, ::6]
+        roads = roads[::4, ::4]
 
         # ------------------ koniec area drog ---------------------------------------------
         roads_mask = roads.astype(bool)
@@ -179,7 +230,7 @@ class FloodModel:
         river = gdf_river.to_crs(self.raster_crs)
 
         # bufor – bo linia rzeki ma szerokość
-        river["geometry"] = river.buffer(30)  # 15 m – można dać 20, 30 itd do zmian
+        river["geometry"] = river.buffer(60)  # 15 m – można dać 20, 30 itd do zmian
 
         river_raster_full = rasterize(
             [(geom, 1) for geom in river.geometry],
@@ -190,7 +241,7 @@ class FloodModel:
 
         # wycinek rynku
         river_rynek = river_raster_full[area_bounds[0]:area_bounds[1], area_bounds[2]:area_bounds[3]]
-        river_rynek = river_rynek[::6, ::6]
+        river_rynek = river_rynek[::4, ::4]
 
         # maska wisły
         river_mask = river_rynek.astype(bool)
