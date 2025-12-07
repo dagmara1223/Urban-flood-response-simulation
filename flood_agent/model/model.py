@@ -48,33 +48,93 @@ class FloodModel:
         self.river_idx = self.river_idx = np.argwhere(self.river_mask)
         self.global_min = float(np.min(self.height))
         self.global_max = float(np.max(self.height))
+                # --- strefa zalewowa: nisko + blisko Wisły ---
+        self.floodplain_mask = self.build_floodplain_mask()
         self.area_bounds = area_bounds
+        self.custom_overflow_mask = self.build_custom_overflow_mask()
 
     def select_river_section(self, x_min, x_max):
         return self.river_idx[(self.river_idx[:,1] > x_min) & (self.river_idx[:,1] < x_max)]
+    def build_floodplain_mask(self):
+        """
+        Przybliżona strefa zalewowa:
+        - piksele nisko położone (np. dolne 40% wysokości),
+        - ALE tylko w sąsiedztwie Wisły (dylacja maski rzeki).
+        """
+        # niski teren (możesz korygować percentile)
+        low_alt = self.area < np.percentile(self.area, 40)
+
+        # sąsiedztwo rzeki (20 pikseli od koryta, po downsamplingu 4x)
+        near_river = ndi.binary_dilation(self.river_mask, iterations=20)
+
+        floodplain = low_alt & near_river
+        return floodplain
+
+    def build_custom_overflow_mask(self):
+        """
+        ręcznie ustawiony obszar, w którym ma pojawić się plama zalania.
+        Np. lewy-dolny fragment mapy.
+        """
+        mask = np.zeros_like(self.area, dtype=bool)
+
+        # obszary dodatkowego wylewu 
+        mask[650:1000,50:500] = True  
+
+        mask[340:750, 1700:2100] = True
+
+        return mask
+
 
     def step(self, t):
+        # maska "miasta" = poza rzeką i poza strefą zalewową
+        city_mask = ~(self.river_mask | self.floodplain_mask)
 
         # deszcz
-        # wisla dostaje 100% opadu, teren miejski tylko część 
         if self.current_rain_index < len(self.rain_series):
-
             rain_m = self.rain_series[self.current_rain_index]
 
-            RUNOFF = 0.25  # 25% deszczu zostaje na powierzchni 
-            # rzeka – przyjmuje cały opad
-            self.water[self.river_mask] += rain_m
+            # ile deszczu zostaje na powierzchni:
+            RIVER_FACTOR      = 1.0   # 100% opadu do Wisły
+            FLOODPLAIN_FACTOR = 0.35  # 35% opadu zostaje na terenach zalewowych
+            CITY_FACTOR       = 0.03  # tylko 3% opadu zostaje w mieście
 
-            # miasto – infiltracja/kanalizacja → zostaje tylko 25%
-            self.water[~self.river_mask] += rain_m * RUNOFF
+            # rzeka
+            self.water[self.river_mask] += rain_m * RIVER_FACTOR
+            # dolina zalewowa (Płaszów / Rybitwy itp.)
+            self.water[self.floodplain_mask & ~self.river_mask] += rain_m * FLOODPLAIN_FACTOR
+            # reszta miasta – prawie wszystko wsiąka / idzie do kanalizacji
+            self.water[city_mask] += rain_m * CITY_FACTOR
 
         self.current_rain_index += 1
 
+        LOCAL_BREACH_THRESHOLD = 0.90
+        LOCAL_BREACH_RATE = 0.025        # spokojniejszy, ale długotrwały
+        LOCAL_BREACH_DURATION = 8       # ile kroków po przebiciu (8 × 10 min = 80 min)
+
+        if not hasattr(self, "breach_counter"):
+            self.breach_counter = 0
+
+        river_level = np.max(self.water[self.river_mask])
+
+        if river_level > LOCAL_BREACH_THRESHOLD and self.breach_counter < LOCAL_BREACH_DURATION:
+            breach_flow = (river_level - LOCAL_BREACH_THRESHOLD) * LOCAL_BREACH_RATE
+
+            self.water[self.custom_overflow_mask] += breach_flow
+            self.water[self.river_mask] -= breach_flow * 0.20
+
+            self.breach_counter += 1 # część wody ubywa z rzeki
+
         # przeplyw co 5 krokow
-        if self.current_rain_index % 5 == 0:
+        if self.current_rain_index % 2 == 0:
             self.water = self.flood_step(self.area, self.water, self.k, self.roads_mask)
 
-        #diagnostyka
+        # drenaz miasta
+        DRAINAGE_CITY = 0.002  # 2 mm na krok znika w mieście
+        #self.water[city_mask] = np.clip(self.water[city_mask] - DRAINAGE_CITY, 0, None)
+        drain_mask = city_mask & (~self.custom_overflow_mask)
+        self.water[drain_mask] = np.clip(self.water[drain_mask] - DRAINAGE_CITY, 0, None)
+
+        # diagnostyka
         if t % 10 == 0:
             non_river = ~self.river_mask
             max_outside = np.max(self.water[non_river])
@@ -89,27 +149,25 @@ class FloodModel:
             print(f"  liczba komórek z wodą > 1 mm = {count_outside}")
             print(f"  total_level rzeka: min={river_total.min():.2f}, max={river_total.max():.2f}")
             print(f"  total_level wał:   min={ring_total.min():.2f}, max={ring_total.max():.2f}")
+            local_max = np.max(self.water[self.custom_overflow_mask])
+            print(f"  local breach depth = {local_max:.2f} m")
 
-        # przelanie walow
+        # przelanie walow + info
         river_max_level = np.max(self.water[self.river_mask])
-
-        OVERFLOW_THRESHOLD = 1.0  # rzeka ma 1 m wody
+        OVERFLOW_THRESHOLD = 1.0  # 1 m słupa wody w korycie
 
         if (not self.overflow_triggered) and (river_max_level > OVERFLOW_THRESHOLD):
-
             print(f"*** UWAGA: Wisła PRZELAŁA WAŁY! (krok={t}, czas={t*10} minut) ***")
 
-            # 1) więcej przepływu = przyspiesza zalewanie
-            self.k = 0.25
+            self.k = 0.25  # więcej przepływu po zalaniu
 
-            # 2) sąsiednie piksele rzeki czyli wały
             ring = ndi.binary_dilation(self.river_mask) & (~self.river_mask)
-
-            # 3) woda wylewa się do sąsiednich pikseli
-            self.water[ring] += 0.3      # łagodne przelewanie
-            self.water[self.river_mask] -= 0.1  # część wody opuszcza koryto
+            self.water[ring] += 0.3        # woda wylewa się na dolinę
+            self.water[self.river_mask] -= 0.1
 
             self.overflow_triggered = True
+        
+
 
     
     # , rain: float= 0.0 - usuniety argument
@@ -118,9 +176,9 @@ class FloodModel:
         new_water = water.copy()
 
         # parametry tłumienia
-        MIN_FLOW = 0.03   # woda poniżej 3 cm stoi w miejscu
-        FLOW_CAP = 0.20   # max 20% wody może wypłynąć z komórki
-        FRICTION = 0.45   # opór terenu (0.0 brak oporu, 1.0 ogromny opór)
+        MIN_FLOW = 0.01   # woda poniżej 1 cm stoi w miejscu
+        FLOW_CAP = 0.12   # max 12% wody może wypłynąć z komórki
+        FRICTION = 0.30   # opór terenu (0.0 brak oporu, 1.0 ogromny opór)
 
         for i in range(1, height.shape[0]-1):
             for j in range(1, height.shape[1]-1):
@@ -138,7 +196,11 @@ class FloodModel:
                     continue
 
                 # drogi → szybszy spływ
-                local_k = k * (1.8 if roads_mask[i,j] else 1.0)
+                #local_k = k * (1.8 if roads_mask[i,j] else 1.0)
+                if self.custom_overflow_mask[i, j]:
+                    local_k = k * 2.5   # zalew = szybkie, agresywne rozlewanie
+                else:
+                    local_k = k * (1.8 if roads_mask[i,j] else 1.0)
 
                 # normalizacja i tłumienie
                 flow_norm = (flow / total_flow) * (1.0 - FRICTION)
