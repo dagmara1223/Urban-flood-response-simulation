@@ -48,7 +48,6 @@ class FloodModel:
         self.river_idx = self.river_idx = np.argwhere(self.river_mask)
         self.global_min = float(np.min(self.height))
         self.global_max = float(np.max(self.height))
-                # --- strefa zalewowa: nisko + blisko Wisły ---
         self.floodplain_mask = self.build_floodplain_mask()
         self.area_bounds = area_bounds
         self.custom_overflow_mask = self.build_custom_overflow_mask()
@@ -61,7 +60,7 @@ class FloodModel:
         - piksele nisko położone (np. dolne 40% wysokości),
         - ALE tylko w sąsiedztwie Wisły (dylacja maski rzeki).
         """
-        # niski teren (możesz korygować percentile)
+        # niski teren 
         low_alt = self.area < np.percentile(self.area, 40)
 
         # sąsiedztwo rzeki (20 pikseli od koryta, po downsamplingu 4x)
