@@ -20,8 +20,8 @@ class RescueAgent(mesa.Agent):
         super().__init__(model)
         self.current_edge = (start_node, None)
         self.progress = 0.0
-        self.speed = np.random.normal(9.0, 1.0) * 10 # driving only, speed in m/s, 10 seconds per step
-        self.capacity = 2
+        self.speed = np.random.normal(8.0, 1.0) * 60 # driving only, speed in m/s, 60 seconds per step
+        self.capacity = np.random.randint(2, 4)  # number of citizens that can be carried
         self.carrying = []
         self.target = None
         self.path = []
@@ -69,7 +69,7 @@ class RescueAgent(mesa.Agent):
         water_depth = self.model.space.G.nodes[self.current_edge[0]].get("depth", 0)
         if water_depth > 0.1:
             remaining_distance = self.speed * np.exp(-2 * water_depth)
-            remaining_distance = max(remaining_distance, 2.0 * 10)  # min speed 2 m/s
+            remaining_distance = max(remaining_distance, 2.0 * 60)  # min speed 2 m/s
         G = self.model.space.G
 
         while remaining_distance > 0 and len(self.path) >= 2:

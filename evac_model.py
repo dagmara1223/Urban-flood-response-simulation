@@ -4,23 +4,23 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import networkx as nx
 import random 
-from rasterio.transform import rowcol
+import os
+
 from agent_model.citizens.citizen_agent import CitizenAgent, CitizenState
 from agent_model.call_center_agent import CallCenterAgent
 from agent_model.rescue_agent import RescueAgent, RescueState
 from flood_agent.model.model import FloodModel
-import os
-from datetime import datetime
 
-class Model(mesa.Model):
-    def __init__(self, n_agents, n_rescue_agents, roads_graph, dem_path, flood_model):
+class EvacModel(mesa.Model):
+    def __init__(self, n_agents, roads_graph, dem_path, flood_model):
         super().__init__()
         self.count = 0
 
         self.space = mesa.space.NetworkGrid(roads_graph) # Create a NetworkGrid based on the road graph
-        self.create_agents(n=n_agents, n2=n_rescue_agents)
+        self.create_rescue_agents()
+        self.create_agents(n=n_agents)
         self.call_center = CallCenterAgent(self)
-        self.safety_spot = [n for n in self.space.G.nodes if n in [13, 40]]  # Example of a safe spot node
+        self.safety_spot = [n for n, d in self.space.G.nodes(data=True) if d.get("is_safe_spot")] # Example of a safe spot node
 
         self.flood_model = flood_model
         if flood_model is not None:
@@ -49,18 +49,18 @@ class Model(mesa.Model):
         }
 
     
-    def create_agents(self, n: int, n2: int):
-        # Create 'n' citizen agents and assign them random starting nodes
-        # TODO: Should be changed to realistic start positions
-
-        for i in range(n2):
-            start_node = random.choice(list(self.space.G.nodes))
-            agent = RescueAgent(self, start_node=start_node)
-            self.agents.add(agent)
-            self.space.place_agent(agent, start_node)
-
+    def create_rescue_agents(self):
+        spawn_points = [n for n, d in self.space.G.nodes(data=True) if d.get("is_rescue_base")]
+        for node in spawn_points:
+            for _ in range(3):
+                agent = RescueAgent(self, start_node=node)
+                self.agents.add(agent)
+                self.space.place_agent(agent, node)
+    
+    def create_agents(self, n: int):
+        valid_nodes = [node for node, data in self.space.G.nodes(data=True) if 250 <= data['pos_array'][1] <= 1000]
         for i in range(n):
-            start_node = random.choice(list(self.space.G.nodes))
+            start_node = random.choice(valid_nodes)
             agent = CitizenAgent(self, start_node=start_node)
             self.agents.add(agent)
             self.space.place_agent(agent, start_node)
@@ -88,10 +88,10 @@ class Model(mesa.Model):
                 self.space.G.nodes[u].get("depth", 0),
                 self.space.G.nodes[v].get("depth", 0),
             )
-            d["safe"] = "no" if node_depth > 0.5 else "yes"  
+            d["safe"] = "no" if node_depth > 0.3 else "yes"  
         
     def step(self):
-        if self.count%1000 == 999:
+        if self.count%10 == 0:
             if self.flood_model is not None:
                 self.flood_step() # Update water depth on graph nodes
 
@@ -140,55 +140,84 @@ class Model(mesa.Model):
             self.visual_data["water"].append(self.water.copy())
 
 
-
-def animate_simulation(model, save_path, interval=200):
+from matplotlib.widgets import Button
+def animate_simulation(model:EvacModel, save_path, fps=5):
     G = model.space.G
     pos = nx.get_node_attributes(G, "pos_array")
     safety_spot = model.safety_spot
 
     fig, ax = plt.subplots(figsize=(10,10))
+    plt.subplots_adjust(bottom=0.15)
+
+    n_frames = len(model.visual_data["agent_positions"])
+    frame = [0]
 
     def update(frame):
         ax.clear()
-
-        # rysuj wody
+        ax.imshow(model.height, cmap='terrain', origin='upper')
+        # rysuj wode
         if model.flood_model is not None:
-            ax.imshow(model.height, cmap='terrain', origin='upper')
-            ax.imshow(model.visual_data["water"][frame], cmap='Blues', alpha=0.6, origin='upper')
-
+            water = model.visual_data["water"][frame]
+            ax.imshow(water, cmap='Blues', alpha=0.9, origin='upper', vmin=0, vmax=1.0)
+            water_mask = np.where(water > 0.1, water, np.nan)
+            ax.imshow(model.flood_model.river_mask, cmap="Blues", alpha=0.9)
+            try:
+                contours = ax.contour(water, levels=[0.05,0.10,0.20,0.40,0.60], colors='blue', linewidths=0.6)
+            except:
+                pass
+        
         # rysuj sieć dróg
         safe_edges = [(u,v,d) for u,v,d in G.edges(data=True) if d.get('safe')=='yes']
         unsafe_edges = [(u,v,d) for u,v,d in G.edges(data=True) if d.get('safe')=='no']
         nx.draw_networkx_edges(G, pos, edgelist=[(u,v) for u,v,_ in safe_edges], edge_color='black', width=0.5)
         nx.draw_networkx_edges(G, pos, edgelist=[(u,v) for u,v,_ in unsafe_edges], edge_color='red', width=0.5)
-        nx.draw_networkx_nodes(G, pos, nodelist=safety_spot, node_color='green', node_size=50)
+        nx.draw_networkx_nodes(G, pos, nodelist=safety_spot, node_color='green', node_size=5)
 
         # rysuj agentów
         agent_positions = model.visual_data["agent_positions"][frame]
         rescue_positions = model.visual_data["rescue_positions"][frame]
         ax.scatter([p[0] for p in agent_positions.values()],
                    [p[1] for p in agent_positions.values()],
-                   c='blue', s=10, label='Agents', zorder=2)
+                   c='yellow', s=2, label='Agents', zorder=2)
         ax.scatter([p[0] for p in rescue_positions.values()],
                    [p[1] for p in rescue_positions.values()],
-                   c='purple', s=10, label='Rescue Agents', zorder=2)
+                   c='purple', s=5, label='Rescue Agents', zorder=2)
 
         ax.set_title(f"Step {frame}")
         ax.legend()
 
-    ani = animation.FuncAnimation(fig, update, frames=len(model.visual_data["agent_positions"]),
-                                  interval=interval)
+    update(frame[0])
+
+    # Funkcje przycisków
+    def next_step(event):
+        frame[0] = (frame[0] + 1) % n_frames
+        update(frame[0])
+        fig.canvas.draw_idle()
+
+    def prev_step(event):
+        frame[0] = (frame[0] - 1) % n_frames
+        update(frame[0])
+        fig.canvas.draw_idle()
+
+    ax_next = plt.axes([0.8, 0.05, 0.1, 0.04])
+    ax_prev = plt.axes([0.69, 0.05, 0.1, 0.04])
+    b_next = Button(ax_next, 'Next')
+    b_prev = Button(ax_prev, 'Prev')
+    b_next.on_clicked(next_step)
+    b_prev.on_clicked(prev_step)
+
+    plt.show()
+
+    fig2, ax2 = plt.subplots(figsize=(10,10))
+    ani = animation.FuncAnimation(fig2, update, frames=len(model.visual_data["agent_positions"]),
+                                  interval=1000/fps)
 
     # Zapisz jako GIF
-    ani.save(save_path, writer='pillow', fps=5)
-    plt.close(fig)
+    ani.save(save_path, writer='pillow', fps=fps)
+    plt.close(fig2)
     print(f"Animacja GIF zapisana: {save_path}")
 
-import os
-import csv
-import numpy as np
 import pandas as pd
-
 def save_stats_to_csv(model, folder_path):
     os.makedirs(folder_path, exist_ok=True)
 
