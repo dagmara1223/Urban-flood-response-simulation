@@ -87,7 +87,7 @@ if __name__ == "__main__":
                 # maska wody
                 vis_water = model.water.copy()
                 vis_water[model.roads_mask] = 0
-                water_mask = np.where(vis_water > 0.15, vis_water, np.nan)
+                water_mask = np.where(vis_water > 0.1, vis_water, np.nan)
 
                 ax.imshow(
                     water_mask,
@@ -96,6 +96,7 @@ if __name__ == "__main__":
                     vmin=0,
                     vmax=1.0
                 )
+                ax.imshow(model.river_mask, cmap="Blues", alpha=0.3)
 
                 # kontury woda glebsza 
                 try:
