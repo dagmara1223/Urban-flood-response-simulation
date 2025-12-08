@@ -146,39 +146,79 @@ def animate_simulation(model:EvacModel, save_path, fps=5):
     pos = nx.get_node_attributes(G, "pos_array")
     safety_spot = model.safety_spot
 
-    fig, ax = plt.subplots(figsize=(10,10))
-    plt.subplots_adjust(bottom=0.15)
-
-    n_frames = len(model.visual_data["agent_positions"])
-    frame = [0]
-
+    fig2, ax = plt.subplots(figsize=(10,10))
     def update(frame):
         ax.clear()
-        ax.imshow(model.height, cmap='terrain', origin='upper')
-        # rysuj wode
         if model.flood_model is not None:
+            ax.imshow(model.flood_model.area, cmap='terrain', 
+                      vmin=model.flood_model.global_min, vmax=model.flood_model.global_max)
             water = model.visual_data["water"][frame]
-            ax.imshow(water, cmap='Blues', alpha=0.9, origin='upper', vmin=0, vmax=1.0)
             water_mask = np.where(water > 0.1, water, np.nan)
-            ax.imshow(model.flood_model.river_mask, cmap="Blues", alpha=0.9)
+            ax.imshow(water_mask, cmap='Blues', alpha=0.9, vmin=0, vmax=1.0)
+            ax.imshow(model.flood_model.river_mask, cmap="Blues", alpha=0.3)
             try:
-                contours = ax.contour(water, levels=[0.05,0.10,0.20,0.40,0.60], colors='blue', linewidths=0.6)
+                ax.contour(water, levels=[0.05,0.10,0.20,0.40,0.60], colors='blue', linewidths=0.6)
             except:
                 pass
         
         # rysuj sieć dróg
         safe_edges = [(u,v,d) for u,v,d in G.edges(data=True) if d.get('safe')=='yes']
         unsafe_edges = [(u,v,d) for u,v,d in G.edges(data=True) if d.get('safe')=='no']
-        nx.draw_networkx_edges(G, pos, edgelist=[(u,v) for u,v,_ in safe_edges], edge_color='black', width=0.5)
-        nx.draw_networkx_edges(G, pos, edgelist=[(u,v) for u,v,_ in unsafe_edges], edge_color='red', width=0.5)
-        nx.draw_networkx_nodes(G, pos, nodelist=safety_spot, node_color='green', node_size=5)
+        nx.draw_networkx_edges(G, pos, edgelist=[(u,v) for u,v,_ in safe_edges], edge_color='black', width=0.5, ax=ax)
+        nx.draw_networkx_edges(G, pos, edgelist=[(u,v) for u,v,_ in unsafe_edges], edge_color='red', width=0.5, ax=ax)
+        nx.draw_networkx_nodes(G, pos, nodelist=safety_spot, node_color='green', node_size=5, ax=ax)
 
         # rysuj agentów
         agent_positions = model.visual_data["agent_positions"][frame]
         rescue_positions = model.visual_data["rescue_positions"][frame]
         ax.scatter([p[0] for p in agent_positions.values()],
                    [p[1] for p in agent_positions.values()],
-                   c='yellow', s=2, label='Agents', zorder=2)
+                   c="#c800cf", s=2, label='Agents', zorder=2)
+        ax.scatter([p[0] for p in rescue_positions.values()],
+                   [p[1] for p in rescue_positions.values()],
+                   c='purple', s=5, label='Rescue Agents', zorder=2)
+
+        ax.set_title(f"Step {frame}")
+        ax.legend()
+    ani = animation.FuncAnimation(fig2, update, frames=len(model.visual_data["agent_positions"]),
+                                  interval=1000/fps)
+
+    # Zapisz jako GIF
+    ani.save(save_path, writer='pillow', fps=fps)
+    plt.close(fig2)
+    print(f"Animacja GIF zapisana: {save_path}")
+
+
+    fig, ax = plt.subplots(figsize=(10,10))
+    plt.subplots_adjust(bottom=0.15)
+
+    def draw_frame(frame):
+        ax.clear()
+        if model.flood_model is not None:
+            ax.imshow(model.flood_model.area, cmap='terrain', 
+                      vmin=model.flood_model.global_min, vmax=model.flood_model.global_max)
+            water = model.visual_data["water"][frame]
+            water_mask = np.where(water > 0.1, water, np.nan)
+            ax.imshow(water_mask, cmap='Blues', alpha=0.9, vmin=0, vmax=1.0)
+            ax.imshow(model.flood_model.river_mask, cmap="Blues", alpha=0.3)
+            try:
+                ax.contour(water, levels=[0.05,0.10,0.20,0.40,0.60], colors='blue', linewidths=0.6)
+            except:
+                pass
+        
+        # rysuj sieć dróg
+        safe_edges = [(u,v,d) for u,v,d in G.edges(data=True) if d.get('safe')=='yes']
+        unsafe_edges = [(u,v,d) for u,v,d in G.edges(data=True) if d.get('safe')=='no']
+        nx.draw_networkx_edges(G, pos, edgelist=[(u,v) for u,v,_ in safe_edges], edge_color='black', width=0.5, ax=ax)
+        nx.draw_networkx_edges(G, pos, edgelist=[(u,v) for u,v,_ in unsafe_edges], edge_color='red', width=0.5, ax=ax)
+        nx.draw_networkx_nodes(G, pos, nodelist=safety_spot, node_color='green', node_size=5, ax=ax)
+
+        # rysuj agentów
+        agent_positions = model.visual_data["agent_positions"][frame]
+        rescue_positions = model.visual_data["rescue_positions"][frame]
+        ax.scatter([p[0] for p in agent_positions.values()],
+                   [p[1] for p in agent_positions.values()],
+                   c="#c800cf", s=2, label='Agents', zorder=2)
         ax.scatter([p[0] for p in rescue_positions.values()],
                    [p[1] for p in rescue_positions.values()],
                    c='purple', s=5, label='Rescue Agents', zorder=2)
@@ -186,17 +226,20 @@ def animate_simulation(model:EvacModel, save_path, fps=5):
         ax.set_title(f"Step {frame}")
         ax.legend()
 
-    update(frame[0])
+    n_frames = len(model.visual_data["agent_positions"])
+    frame = [0]
+
+    draw_frame(frame[0])
 
     # Funkcje przycisków
     def next_step(event):
         frame[0] = (frame[0] + 1) % n_frames
-        update(frame[0])
+        draw_frame(frame[0])
         fig.canvas.draw_idle()
 
     def prev_step(event):
         frame[0] = (frame[0] - 1) % n_frames
-        update(frame[0])
+        draw_frame(frame[0])
         fig.canvas.draw_idle()
 
     ax_next = plt.axes([0.8, 0.05, 0.1, 0.04])
@@ -207,15 +250,6 @@ def animate_simulation(model:EvacModel, save_path, fps=5):
     b_prev.on_clicked(prev_step)
 
     plt.show()
-
-    fig2, ax2 = plt.subplots(figsize=(10,10))
-    ani = animation.FuncAnimation(fig2, update, frames=len(model.visual_data["agent_positions"]),
-                                  interval=1000/fps)
-
-    # Zapisz jako GIF
-    ani.save(save_path, writer='pillow', fps=fps)
-    plt.close(fig2)
-    print(f"Animacja GIF zapisana: {save_path}")
 
 import pandas as pd
 def save_stats_to_csv(model, folder_path):
