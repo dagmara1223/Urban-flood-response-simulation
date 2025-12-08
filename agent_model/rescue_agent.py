@@ -3,7 +3,6 @@ import numpy as np
 import networkx as nx
 from agent_model.citizens.citizen_agent import CitizenAgent, CitizenState
 
-
 class RescueState:
     """Enum-like class for rescue agent states."""
     AVAILABLE = 0       # Ready for new mission
@@ -21,7 +20,7 @@ class RescueAgent(mesa.Agent):
         super().__init__(model)
         self.current_edge = (start_node, None)
         self.progress = 0.0
-        self.speed = np.random.normal(8.0, 1.0)  # driving only
+        self.speed = np.random.normal(9.0, 1.0) * 10 # driving only, speed in m/s, 10 seconds per step
         self.capacity = 2
         self.carrying = []
         self.target = None
@@ -30,8 +29,6 @@ class RescueAgent(mesa.Agent):
 
         self.rescue_start_times = {}  # citizen_id -> start time
 
-        with open(self.model.log_path, "a") as f:
-                    f.write(f"[RescueAgent {self.unique_id}] Ready at node {start_node}\n")
 
     def set_target(self, citizen):
         """Assign a new target (citizen) and compute a path avoiding unsafe roads."""
@@ -50,8 +47,6 @@ class RescueAgent(mesa.Agent):
             if len(path) > 1:
                 self.current_edge = (self.current_edge[0], path[1])
             self.state = RescueState.ON_MISSION
-            with open(self.model.log_path, "a") as f:
-                    f.write(f"[RescueAgent {self.unique_id}] Safe path to citizen {citizen.unique_id}: {len(path)} steps\n")
         except Exception:
             try:
                 path = nx.shortest_path(G, self.current_edge[0], citizen.current_edge[0], weight="length")
@@ -59,11 +54,8 @@ class RescueAgent(mesa.Agent):
                 if len(path) > 1:
                     self.current_edge = (self.current_edge[0], path[1])
                 self.state = RescueState.ON_MISSION
-                with open(self.model.log_path, "a") as f:
-                    f.write(f"[RescueAgent {self.unique_id}] Safe path to citizen {citizen.unique_id}: {len(path)} steps\n")
+                
             except Exception:
-                with open(self.model.log_path, "a") as f:
-                    f.write(f"[RescueAgent {self.unique_id}] No path to Citizen {citizen.unique_id}\n")
                 self.path = []
                 self.target = None
                 self.state = RescueState.AVAILABLE
@@ -73,22 +65,36 @@ class RescueAgent(mesa.Agent):
         if not self.path or len(self.path) < 2:
             return
 
-        next_node = self.path[1]
+        remaining_distance = self.speed  # ile agent może przejechać w tym kroku
+        water_depth = self.model.space.G.nodes[self.current_edge[0]].get("depth", 0)
+        if water_depth > 0.1:
+            remaining_distance = self.speed * np.exp(-2 * water_depth)
+            remaining_distance = max(remaining_distance, 2.0 * 10)  # min speed 2 m/s
         G = self.model.space.G
-        edge_length = G[self.path[0]][next_node]["length"]
-        self.progress += self.speed / edge_length
 
-        if self.progress >= 1.0:
-            # Arrived at the next node
-            self.current_edge = (next_node, self.path[2] if len(self.path) > 2 else None)
-            self.model.space.move_agent(self, next_node)
-            self.path.pop(0)
-            self.progress = 0.0
+        while remaining_distance > 0 and len(self.path) >= 2:
+            start = self.path[0]
+            next_node = self.path[1]
+            edge_length = G[start][next_node]["length"]
 
-            for c in self.carrying:
-                self.model.space.move_agent(c, next_node)
+            distance_to_next = edge_length * (1.0 - self.progress)
+            if remaining_distance >= distance_to_next:
+                # Przechodzimy przez węzeł
+                remaining_distance -= distance_to_next
+                self.current_edge = (next_node, self.path[2] if len(self.path) > 2 else None)
+                self.model.space.move_agent(self, next_node)
+                self.path.pop(0)
+                self.progress = 0.0
 
-        # Synchronize carried citizens
+                # Synchronizacja obywateli w środku pojazdu
+                for c in self.carrying:
+                    self.model.space.move_agent(c, next_node)
+            else:
+                # Poruszamy się w obrębie krawędzi
+                self.progress += remaining_distance / edge_length
+                remaining_distance = 0
+
+        # Aktualizacja pozycji obywateli w środku pojazdu
         for c in self.carrying:
             c.current_edge = self.current_edge
             c.progress = self.progress
@@ -104,13 +110,9 @@ class RescueAgent(mesa.Agent):
                     self.state = RescueState.CARRYING
                     self.target = None
 
-                    with open(self.model.log_path, "a") as f:
-                        f.write(f"[RescueAgent {self.unique_id}] Rescued Citizen {a.unique_id}\n")
-
                     start_step = self.rescue_start_times.pop(a.unique_id, self.model.count)
-                    evac_time = self.model.count - start_step
-                    with open(self.model.log_path_time, "a") as f:
-                        f.write(f"RESCUED: RescueAgent: {self.unique_id}, Citizen: {a.unique_id}, time: {evac_time} steps [{start_step} - {self.model.count}]\n")
+                    evac_time_to_rescuer = self.model.count - start_step
+                    self.model.stats["rescue_response_time"].append(evac_time_to_rescuer)
                     self.rescue_start_times[a.unique_id] = self.model.count
 
                     # Compute route to nearest safe location
@@ -137,15 +139,12 @@ class RescueAgent(mesa.Agent):
         # Case 1: carrying citizens → go to safety
         if self.state == RescueState.CARRYING:
             if self.current_edge[0] in self.model.safety_spot:
-                with open(self.model.log_path, "a") as f:
-                    f.write(f"[RescueAgent {self.unique_id}] Dropped off {len(self.carrying)} citizens at safety.\n")
                 for c in self.carrying:
                     c.state = CitizenState.SAFE
 
                     start_step = self.rescue_start_times.pop(c.unique_id, self.model.count)
                     evac_time = self.model.count - start_step
-                    with open(self.model.log_path_time, "a") as f:
-                        f.write(f"SAFE: RescueAgent: {self.unique_id}, Citizen: {c.unique_id}, time: {evac_time} steps [{start_step} - {self.model.count}]\n")
+                    self.model.stats["rescue_to_safety_time"].append(evac_time)
                 self.carrying.clear()
                 self.state = RescueState.AVAILABLE
             else:
