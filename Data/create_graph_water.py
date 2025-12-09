@@ -123,17 +123,18 @@ roads_raster_full = rasterize(
 left, bottom, right, top = bbox_poly_wgs.bounds
 G_drive = ox.graph_from_bbox(bbox_poly_wgs.bounds, network_type='drive')
 G_drive = ox.project_graph(G_drive, to_crs=raster_crs_proj)
-G_walk = ox.graph_from_bbox(bbox_poly_wgs.bounds, network_type='walk')
-G_walk = ox.project_graph(G_walk, to_crs=raster_crs_proj)
+#G_walk = ox.graph_from_bbox(bbox_poly_wgs.bounds, network_type='walk')
+#G_walk = ox.project_graph(G_walk, to_crs=raster_crs_proj)
 
 # Dodanie pozycji x,y w CRS DEM
 for n, data in G_drive.nodes(data=True):
     data['x'] = float(data['x'])
     data['y'] = float(data['y'])
+'''
 for n, data in G_walk.nodes(data=True):
     data['x'] = float(data['x'])
     data['y'] = float(data['y'])
-
+'''
 G = nx.Graph()
 for u, v, d in G.edges(data=True):
     d['road_type'] = 'unknown'
@@ -143,18 +144,16 @@ for u, v, data in G_drive.edges(data=True):
     G.add_edge(u, v, length=length, road_type="drive")
 for n, data in G_drive.nodes(data=True):
     G.add_node(n, x=data['x'], y=data['y'])
-
+'''
 for u, v, data in G_walk.edges(data=True):
     length = data.get('length', 1.0)
     if G.has_edge(u, v):
         G[u][v]["road_type"] = "both"
     else:
         G.add_edge(u, v, length=length, road_type="walk")
-
-
 for n, data in G_walk.nodes(data=True):
     G.add_node(n, x=data['x'], y=data['y'])
-
+'''
 # -------------------------------
 # Funkcja map_depth_to_graph
 # -------------------------------
