@@ -6,7 +6,7 @@ from rasterio.crs import CRS
 
 
 DEM_PATH = "Data/krakow_merged.tif"
-PNG_PATH = "Data/flood_map.png"
+PNG_PATH = "Data/flood_map_cropped_2.jpg"
 OUTPUT_PATH = "Data/validation_krakow.tif"
 
 with rasterio.open(DEM_PATH) as dem:
@@ -59,11 +59,15 @@ import matplotlib.pyplot as plt
 dem = rasterio.open("Data/krakow_merged.tif")
 flood = rasterio.open("Data/validation_krakow.tif")
 
-dem_img = dem.read(1)
-flood_img = flood.read(1)
+import rasterio.plot
 
-plt.figure(figsize=(40,40))
-plt.imshow(dem_img, cmap="terrain")
-plt.imshow(flood_img, cmap="Reds", alpha=0.3)
+fig, ax = plt.subplots(figsize=(12,12))
+
+# Show DEM with correct extent and CRS
+rasterio.plot.show(dem, ax=ax, cmap="terrain")
+
+# Overlay flood map with some transparency
+rasterio.plot.show(flood, ax=ax, cmap="Reds", alpha=0.3)
+
 plt.title("DEM + Flood Map Overlay")
 plt.savefig("Data/check.png")
