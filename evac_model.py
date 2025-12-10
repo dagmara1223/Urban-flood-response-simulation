@@ -94,7 +94,7 @@ class EvacModel(mesa.Model):
                 self.space.G.nodes[u].get("depth", 0),
                 self.space.G.nodes[v].get("depth", 0),
             )
-            d["safe"] = "no" if node_depth > 0.3 else "yes"  
+            d["safe"] = "no" if node_depth > 0.5 else "yes"  
         
     def step(self):
         if self.count%10 == 0:
