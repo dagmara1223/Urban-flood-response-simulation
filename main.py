@@ -4,8 +4,8 @@ import networkx as nx
 from evac_model import EvacModel, animate_simulation, save_stats_to_csv
 from flood_agent.model.model import FloodModel
 import matplotlib.pyplot as plt
-import numpy as np
-
+from flood_agent.validation.validation import validate_model_flood
+import rasterio
 
 def build_example_graph(path):
     # Tworzenie grafu drogowego
@@ -21,7 +21,8 @@ def build_example_graph(path):
 if __name__ == "__main__":
 
     run_flood_simulation = True
-    run_evacuation_simulation = True
+    run_evacuation_simulation = False
+    run_validation = True
 
     # Flood simulation parameters ------------------------------------------------------------
     k = 0.15 # startowo 
@@ -99,29 +100,44 @@ if __name__ == "__main__":
                 )
                 ax.imshow(model.river_mask, cmap="Blues", alpha=0.3)
 
-                # kontury woda glebsza 
-                try:
-                    contours = ax.contour(
-                        model.water,
-                        levels=[0.05,0.10,0.20,0.40,0.60],
-                        colors='blue',
-                        linewidths=0.6
-                    )
-                    ax.clabel(contours, inline=True, fontsize=6, fmt="%.2f m")
-                except:
-                    pass
+                # legenda 1 (wysokość terenu)
+                cbar1 = plt.colorbar(im1, fraction=0.046, pad=0.04)
+                cbar1.set_label("Wysokość terenu [m n.p.m.]")
 
-                ax.set_title(f"Krok {t} – Kraków (zalanie >2 cm)")
-                ax.axis("off")
+                # legenda 2 (głębokość wody)
+                cbar2 = plt.colorbar(im2, fraction=0.046, pad=0.12)
+                cbar2.set_label("Głębokość wody [m]")
 
-                outfile = f"frames/frame_{t:04d}.png"
-                fig.savefig(outfile, dpi=150, bbox_inches='tight')
-                plt.close(fig)
+                plt.title(f"Deszcz + spływ powierzchniowy — krok {t}")
+                plt.pause(0.5)
+        plt.tight_layout()
+        plt.show()
+    
+    if run_flood_simulation and run_validation:
+        map_path = "Data/validation_krakow.tif"
 
-                print("Zapisano:", outfile)
+        with rasterio.open(dem_path) as dem_src:
+            dem_transform = dem_src.transform
 
+        model_mask, reference_mask, metrics = validate_model_flood(
+            map_path=map_path,
+            model_height=model.area,
+            model_water=model.water,
+            model_transform=dem_transform
+        )
 
+        # --- 3. Print metrics ---
+        print("\nValidation metrics:")
+        for k, v in metrics.items():
+            print(f"{k}: {v}")
 
-        
-        
+        # --- 4. Optional: visualize model vs reference ---
+        import matplotlib.pyplot as plt
+
+        plt.figure(figsize=(10,10))
+        plt.imshow(model_mask, cmap="Blues", alpha=0.5)
+        plt.imshow(reference_mask, cmap="Reds", alpha=0.5)
+        plt.title("Model flood (blue) vs Reference flood (red)")
+        plt.savefig("Data/validation_overlay.png")
+        plt.close()
 
