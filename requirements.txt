@@ -3,3 +3,6 @@ networkx
 matplotlib
 numpy
 osmnx
+pandas
+ffmpeg
+opencv-python
