@@ -73,6 +73,8 @@ class CitizenAgent(mesa.Agent):
         self.max_speed = np.random.normal(1.5, 0.3) * 60 # m/s 60 seconds per step
         self.current_speed = self.max_speed
 
+        self.start_step = self.model.count
+
         
 
     def update_state(self, water_matrix: np.ndarray):
@@ -85,7 +87,7 @@ class CitizenAgent(mesa.Agent):
         if self.state != CitizenState.UNSAFE:
             return
         if self.current_edge[0] in self.model.safety_spot:
-            self.model.stats["safety_arrival_times"].append(self.model.count)
+            self.model.stats["safety_arrival_times"].append(self.model.count - self.start_step)
             self.state = CitizenState.SAFE
             return
         if self.current_edge[1] is None:
@@ -109,7 +111,7 @@ class CitizenAgent(mesa.Agent):
         elif self.decision_making_mode == CitizenDecisionMakingMode.DIJIKSTRA:
             self.dijikstra_path_choice(current_node)
         elif self.decision_making_mode == CitizenDecisionMakingMode.FOLLOWER:
-            self.follower_path_choice(current_node);
+            self.follower_path_choice(current_node)
 
 
     def random_path_choice(self, current_node):
