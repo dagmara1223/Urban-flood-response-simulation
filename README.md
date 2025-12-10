@@ -5,7 +5,15 @@ Projekt ma na celu odwzorowanie zarówno **rozprzestrzeniania się wody na obsza
 Model łączy dane topograficzne, graf dróg miejskich oraz inteligentne zachowania agentów, tworząc spójne środowisko do badania procesów ewakuacji i zarządzania kryzysowego.
 
 ---
+## Requirements
 
+- Python packages:
+  pip install -r requirements.txt
+- System packages:
+  - ffmpeg (required for matplotlib.animation.FFMpegWriter)
+       - On conda: conda install -c conda-forge ffmpeg
+       - Or download from https://ffmpeg.org/download.html
+---
 ## 🎯 Cel projektu
 
 W maju 2010 roku Kraków został dotknięty jedną z największych powodzi w historii miasta.  
