@@ -58,9 +58,15 @@ class EvacModel(mesa.Model):
                 self.space.place_agent(agent, node)
     
     def create_agents(self, n: int):
-        valid_nodes = [node for node, data in self.space.G.nodes(data=True) if 250 <= data['pos_array'][1] <= 1000]
-        for i in range(n):
+        valid_nodes = [node for node, data in self.space.G.nodes(data=True) if 300 <= data['pos_array'][1] <= 1000 
+                       and (0 <= data['pos_array'][0] <= 600 or 1700 <= data['pos_array'][0] <= 2100)]
+        for i in range(n//2):
             start_node = random.choice(valid_nodes)
+            agent = CitizenAgent(self, start_node=start_node)
+            self.agents.add(agent)
+            self.space.place_agent(agent, start_node)
+
+            start_node = random.choice(list(self.space.G.nodes))
             agent = CitizenAgent(self, start_node=start_node)
             self.agents.add(agent)
             self.space.place_agent(agent, start_node)
@@ -119,7 +125,8 @@ class EvacModel(mesa.Model):
         rescue_positions = {}
         pos = nx.get_node_attributes(self.space.G, "pos_array")
 
-        for agent in self.agents:
+        agents = [a for a in self.agents if isinstance(a, RescueAgent) or (isinstance(a, CitizenAgent) and a.state != CitizenState.SAFE)]
+        for agent in agents:
             if not isinstance(agent, (CitizenAgent, RescueAgent)):
                 continue
             x0, y0 = pos[agent.current_edge[0]]
@@ -141,7 +148,8 @@ class EvacModel(mesa.Model):
 
 
 from matplotlib.widgets import Button
-def animate_simulation(model:EvacModel, save_path, fps=5):
+from matplotlib.animation import FuncAnimation, FFMpegWriter
+def animate_simulation(model:EvacModel, save_path="evacuation_simulation.mp4", fps=5):
     G = model.space.G
     pos = nx.get_node_attributes(G, "pos_array")
     safety_spot = model.safety_spot
@@ -156,10 +164,7 @@ def animate_simulation(model:EvacModel, save_path, fps=5):
             water_mask = np.where(water > 0.1, water, np.nan)
             ax.imshow(water_mask, cmap='Blues', alpha=0.9, vmin=0, vmax=1.0)
             ax.imshow(model.flood_model.river_mask, cmap="Blues", alpha=0.3)
-            try:
-                ax.contour(water, levels=[0.05,0.10,0.20,0.40,0.60], colors='blue', linewidths=0.6)
-            except:
-                pass
+            
         
         # rysuj sieć dróg
         safe_edges = [(u,v,d) for u,v,d in G.edges(data=True) if d.get('safe')=='yes']
@@ -184,9 +189,12 @@ def animate_simulation(model:EvacModel, save_path, fps=5):
                                   interval=1000/fps)
 
     # Zapisz jako GIF
-    ani.save(save_path, writer='pillow', fps=fps)
+    #ani.save(save_path, writer='pillow', fps=fps)
+    writer = FFMpegWriter(fps=fps, bitrate=2000)
+
+    ani.save(save_path, writer=writer)
     plt.close(fig2)
-    print(f"Animacja GIF zapisana: {save_path}")
+    print(f"Animacja zapisana: {save_path}")
 
 
     fig, ax = plt.subplots(figsize=(10,10))

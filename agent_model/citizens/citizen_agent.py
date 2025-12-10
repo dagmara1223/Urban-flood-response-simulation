@@ -70,7 +70,7 @@ class CitizenAgent(mesa.Agent):
         self.decision_making_mode = random.choice([CitizenDecisionMakingMode.RANDOM, CitizenDecisionMakingMode.DIJIKSTRA, CitizenDecisionMakingMode.DIJIKSTRA,
                                                    CitizenDecisionMakingMode.FOLLOWER, CitizenDecisionMakingMode.FOLLOWER])
 
-        self.max_speed = np.random.normal(1, 0.3) * 60 # m/s 60 seconds per step
+        self.max_speed = np.random.normal(1.5, 0.3) * 60 # m/s 60 seconds per step
         self.current_speed = self.max_speed
 
         
