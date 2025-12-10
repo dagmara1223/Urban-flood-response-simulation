@@ -41,7 +41,7 @@ if __name__ == "__main__":
     # Evacuation simulation parameters -------------------------------------------------------
     graph_path = 'Data/krakow_roads_all_2.graphml'
     dem_path = 'Data/krakow_merged.tif'
-    n_agents = 200 # 8000
+    n_agents = 100 # 8000
     G = build_example_graph(graph_path)
     #-------------------------------------------------------------------------------------------
 
@@ -57,13 +57,15 @@ if __name__ == "__main__":
             flood_model = FloodModel(dem_path, k=k, area_bounds=area_bounds, rain_block=rain_block)
         model = EvacModel(n_agents=n_agents, roads_graph=G, dem_path=dem_path, flood_model=flood_model)
         
-        for t in range(100):
+        for t in range(1600):
             print(f"Step {t}")
             model.step()
+            if t % 80 == 0:
+                model.create_agents(200)
         
         # Create animation
         save_stats_to_csv(model, folder_path)
-        anim = animate_simulation(model, save_path=os.path.join(folder_path, "evacuation_simulation.gif"), fps=5)
+        anim = animate_simulation(model, save_path=os.path.join(folder_path, "evacuation_simulation.mp4"), fps=5)
 
     # Run flood simulation (only if no evacuation) -------------------------------------------
     if run_flood_simulation and not run_evacuation_simulation:
