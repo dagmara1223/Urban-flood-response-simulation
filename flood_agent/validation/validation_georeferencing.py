@@ -67,7 +67,7 @@ fig, ax = plt.subplots(figsize=(12,12))
 rasterio.plot.show(dem, ax=ax, cmap="terrain")
 
 # Overlay flood map with some transparency
-rasterio.plot.show(flood, ax=ax, cmap="Reds", alpha=0.3)
+rasterio.plot.show(flood, ax=ax, cmap="Reds", 1)
 
 plt.title("DEM + Flood Map Overlay")
 plt.savefig("Data/check.png")
