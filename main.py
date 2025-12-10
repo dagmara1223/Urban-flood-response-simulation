@@ -1,7 +1,7 @@
 from datetime import datetime
 import os
 import networkx as nx
-from evac_model import Model
+from evac_model import EvacModel, animate_simulation, save_stats_to_csv
 from flood_agent.model.model import FloodModel
 import matplotlib.pyplot as plt
 from flood_agent.validation.validation import validate_model_flood
@@ -12,8 +12,8 @@ def build_example_graph(path):
     G = nx.read_graphml(path)
     G = nx.convert_node_labels_to_integers(G)
     for n, data in G.nodes(data=True):
-        data['pos'] = (float(data['x']), float(data['y']))
-        data['pos_array'] = (int(data['pos_array_x']), int(data['pos_array_y']))
+        data['pos'] = (float(data['x']/4), float(data['y']/4))
+        data['pos_array'] = (int(data['pos_array_x']/4), int(data['pos_array_y']/4))
     G.remove_edges_from(nx.selfloop_edges(G))
     return G
 
@@ -28,7 +28,8 @@ if __name__ == "__main__":
     k = 0.15 # startowo 
     dem_path = "Data/krakow_merged.tif"
     # rynek
-    area_bounds=(2000, 3200, 3500, 4800)
+    area_bounds=(0, 4838, 0, 11138)
+    #area_bounds = (2000, 3200, 3500, 4800)
     # scenariusz odwzorowuje realne sumy opadów z powodzi 2010 w Krakowie mamy ≈141 mm
     rain_block = [
         (6,6), # 6 h po 6mm/h - front pierwszy
@@ -39,54 +40,63 @@ if __name__ == "__main__":
     #-------------------------------------------------------------------------------------------
 
     # Evacuation simulation parameters -------------------------------------------------------
-    graph_path = 'Data/krakow_roads2.graphml'
+    graph_path = 'Data/krakow_roads_all_2.graphml'
     dem_path = 'Data/krakow_merged.tif'
-    n_agents = 150
-    n_rescue_agents = 5
+    n_agents = 200 # 8000
     G = build_example_graph(graph_path)
     #-------------------------------------------------------------------------------------------
 
     # Run evacuation simulation ---------------------------------------------------------------
     if run_evacuation_simulation:
         # create output folder with timestamp
-        curr_time = datetime.now().strftime("%H_%M_%S")
+        curr_time = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
         folder_path = f"output/run_{curr_time}"
         os.makedirs(folder_path, exist_ok=True)
-        log_path = os.path.join(folder_path, "log.txt")
 
         flood_model = None
         if run_flood_simulation:
             flood_model = FloodModel(dem_path, k=k, area_bounds=area_bounds, rain_block=rain_block)
-        model = Model(n_agents=n_agents, n_rescue_agents=n_rescue_agents, roads_graph=G, dem_path=dem_path, log_path=folder_path, flood_model=flood_model)
+        model = EvacModel(n_agents=n_agents, roads_graph=G, dem_path=dem_path, flood_model=flood_model)
         
-        for t in range(200):
-            with open(log_path, "a") as f:
-                f.write(f"\n--- Step {t} ---\n")
-            print(f"--- Step {t} ---")
+        for t in range(100):
+            print(f"Step {t}")
             model.step()
+        
+        # Create animation
+        save_stats_to_csv(model, folder_path)
+        anim = animate_simulation(model, save_path=os.path.join(folder_path, "evacuation_simulation.gif"), fps=5)
 
     # Run flood simulation (only if no evacuation) -------------------------------------------
     if run_flood_simulation and not run_evacuation_simulation:
         
-
         model = FloodModel(dem_path, k=k, area_bounds=area_bounds, rain_block=rain_block)
 
         plt.figure(figsize=(10,6))
         for t in range(len(model.rain_series)):
-            model.step()
+            model.step(t)
 
-            # animacja co 20 kroków
-            if t % 20 == 0:
-                plt.clf()
+            if t % 10 == 0:
 
-                #plt.imshow(roads_rynek, cmap="binary", alpha=0.18, origin="upper")
-                plt.imshow(model.roads, cmap="gray", alpha=0.3)
-                plt.contour(model.roads, levels=[0.5], colors='black', linewidths=0.5)
+                fig, ax = plt.subplots(figsize=(12,6))
 
-                # terrain
-                im1 = plt.imshow(model.area, cmap='terrain', origin='upper')
-                # water overlay
-                im2 = plt.imshow(model.water, cmap='Blues', alpha=0.65, origin='upper')
+                # dem
+                ax.imshow(model.area, cmap='terrain',
+                        vmin=model.global_min,
+                        vmax=model.global_max)
+
+                # maska wody
+                vis_water = model.water.copy()
+                vis_water[model.roads_mask] = 0
+                water_mask = np.where(vis_water > 0.1, vis_water, np.nan)
+
+                ax.imshow(
+                    water_mask,
+                    cmap='Blues',
+                    alpha=0.7,
+                    vmin=0,
+                    vmax=1.0
+                )
+                ax.imshow(model.river_mask, cmap="Blues", alpha=0.3)
 
                 # legenda 1 (wysokość terenu)
                 cbar1 = plt.colorbar(im1, fraction=0.046, pad=0.04)
