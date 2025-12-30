@@ -15,7 +15,7 @@ class CitizenState(Enum):
         SAFE (int): The citizen is in no need of immediate evacuation.
         UNSAFE (int): The citizen is in endangered area and needs to seek an evacuation.
         CRITICALLY_UNSAFE (int): The citizen is in a heavily flooded area and requires assistance to be rescued.
-        RESCUED (int): The citizen has been rescued and is going to a safe location.
+        RESCUED (int): The citizen has been rescued and is located at the sade spot.
     """
     SAFE = 0
     UNSAFE = 1
@@ -27,7 +27,7 @@ class CitizenDecisionMakingMode(Enum):
     Enum representing the path finding algorithm the citizen uses to decide the evacuation path.
 
     Attributes:
-        DIJIKSTRA: Citizen uses A star algorithm to find a path to safe node.
+        DIJIKSTRA: Citizen uses Dijikstra algorithm to find a path to safe node.
         RANDOM: Known also as a panic mode, the citizen picks the path to follow at random and hopes for the best.
         FOLLOWER: Citizen follows the nearest agent.
     """
@@ -58,7 +58,7 @@ class CitizenAgent(mesa.Agent):
         max_speed (float): Maximum speed of an agent in meters per second. The agent receives a randomized speed, when it is created.
             - it is calculated following a Gaussian distribution with mean = 1.5 m/s, std = 0.3 m/s
 
-        current-speed (float): Current speed of an agent. Current speed cannot exceed maximum speed. When the agent is flooded or surrounded by too many other agents per grid, its speed decreases.
+        current-speed (float): Current speed of an agent. Current speed cannot exceed maximum speed. When the agent is flooded, its speed decreases.
 
     """
     def __init__(self, model, start_node):
@@ -163,7 +163,6 @@ class CitizenAgent(mesa.Agent):
         self.progress += self.current_speed / edge_length
 
         if self.progress >= 1.0:
-            # Dotarł do następnego węzła
             self.current_edge = (self.current_edge[1], None)
             self.progress = 0.0
             self.model.space.move_agent(self, self.current_edge[0])
