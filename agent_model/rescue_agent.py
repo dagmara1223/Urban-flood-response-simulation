@@ -65,7 +65,7 @@ class RescueAgent(mesa.Agent):
         if not self.path or len(self.path) < 2:
             return
 
-        remaining_distance = self.speed  # ile agent może przejechać w tym kroku
+        remaining_distance = self.speed
         water_depth = self.model.space.G.nodes[self.current_edge[0]].get("depth", 0)
         if water_depth > 0.1:
             remaining_distance = self.speed * np.exp(-2 * water_depth)
@@ -79,22 +79,19 @@ class RescueAgent(mesa.Agent):
 
             distance_to_next = edge_length * (1.0 - self.progress)
             if remaining_distance >= distance_to_next:
-                # Przechodzimy przez węzeł
                 remaining_distance -= distance_to_next
                 self.current_edge = (next_node, self.path[2] if len(self.path) > 2 else None)
                 self.model.space.move_agent(self, next_node)
                 self.path.pop(0)
                 self.progress = 0.0
 
-                # Synchronizacja obywateli w środku pojazdu
+                # Synchronize positions of carried citizens
                 for c in self.carrying:
                     self.model.space.move_agent(c, next_node)
             else:
-                # Poruszamy się w obrębie krawędzi
                 self.progress += remaining_distance / edge_length
                 remaining_distance = 0
 
-        # Aktualizacja pozycji obywateli w środku pojazdu
         for c in self.carrying:
             c.current_edge = self.current_edge
             c.progress = self.progress
@@ -114,34 +111,32 @@ class RescueAgent(mesa.Agent):
                     evac_time_to_rescuer = self.model.count - start_step
                     self.model.stats["rescue_response_time"].append(evac_time_to_rescuer)
                     self.rescue_start_times[a.unique_id] = self.model.count
-
-                    # Compute route to nearest safe location
-                    safe = min(
-                        self.model.safety_spot,
-                        key=lambda n: nx.shortest_path_length(
-                            self.model.space.G,
-                            self.current_edge[0],
-                            n,
-                            weight="length",
-                        ),
-                    )
-                    safe_edges = [(u, v) for u, v, d in self.model.space.G.edges(data=True) if d.get("safe", "yes") == "yes"]
-                    subG = self.model.space.G.edge_subgraph(safe_edges).copy()
-                    try:
-                        self.path = nx.shortest_path(subG, self.current_edge[0], safe, weight="length")
-                    except Exception:
-                        self.path = nx.shortest_path(self.model.space.G, self.current_edge[0], safe, weight="length")
-
-                    return
+        if self.state == RescueState.CARRYING:
+            # Compute route to nearest safe location
+            safe = min(
+                self.model.safety_spot,
+                key=lambda n: nx.shortest_path_length(
+                    self.model.space.G,
+                    self.current_edge[0],
+                    n,
+                    weight="length",
+                ),
+            )
+            safe_edges = [(u, v) for u, v, d in self.model.space.G.edges(data=True) if d.get("safe", "yes") == "yes"]
+            subG = self.model.space.G.edge_subgraph(safe_edges).copy()
+            try:
+                self.path = nx.shortest_path(subG, self.current_edge[0], safe, weight="length")
+            except Exception:
+                self.path = nx.shortest_path(self.model.space.G, self.current_edge[0], safe, weight="length")
+        elif isinstance(self.target, CitizenAgent) and self.target.state != CitizenState.CRITICALLY_UNSAFE:
+            self.state = RescueState.AVAILABLE
 
     def step(self):
         """Main agent behavior each simulation step."""
-        # Case 1: carrying citizens → go to safety
+        # 1 carrying citizens: go to safety
         if self.state == RescueState.CARRYING:
             if self.current_edge[0] in self.model.safety_spot:
                 for c in self.carrying:
-                    c.state = CitizenState.SAFE
-
                     start_step = self.rescue_start_times.pop(c.unique_id, self.model.count)
                     evac_time = self.model.count - start_step
                     self.model.stats["rescue_to_safety_time"].append(evac_time)
@@ -151,12 +146,12 @@ class RescueAgent(mesa.Agent):
                 self.move_along_path()
             return
 
-        # Case 2: on mission → move and rescue if at citizen
+        # 2 on mission: move and rescue if at citizen
         if self.state == RescueState.ON_MISSION and self.target:
             if self.path:
                 self.move_along_path()
             self.rescue()
 
-        # Case 3: idle → wait for assignment
+        # 3 idle: wait for assignment
         if self.state == RescueState.AVAILABLE:
             return

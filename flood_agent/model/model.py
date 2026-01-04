@@ -1,11 +1,11 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from time import sleep
+#import matplotlib.pyplot as plt
+#from time import sleep
 import rasterio
-from rasterio.merge import merge
-import glob
+#from rasterio.merge import merge
+#import glob
 from rasterio.transform import rowcol, xy
-import geopandas as gpd
+#import geopandas as gpd
 import osmnx as ox
 from rasterio.features import rasterize
 from shapely.geometry import box
@@ -70,16 +70,17 @@ class FloodModel:
         return floodplain
 
     def build_custom_overflow_mask(self):
-        """
-        ręcznie ustawiony obszar, w którym ma pojawić się plama zalania.
-        Np. lewy-dolny fragment mapy.
-        """
         mask = np.zeros_like(self.area, dtype=bool)
 
         # obszary dodatkowego wylewu 
         mask[650:1000,50:500] = True  
 
         mask[340:750, 1700:2100] = True
+
+        padded_roads = ndi.binary_dilation(self.roads_mask, iterations=5)
+
+        # ostateczna maska — tylko tam gdzie obszar użytkownika i powiększona droga
+        mask = mask & padded_roads
 
         return mask
 
@@ -93,9 +94,9 @@ class FloodModel:
             rain_m = self.rain_series[self.current_rain_index]
 
             # ile deszczu zostaje na powierzchni:
-            RIVER_FACTOR      = 1.0   # 100% opadu do Wisły
-            FLOODPLAIN_FACTOR = 0.35  # 35% opadu zostaje na terenach zalewowych
-            CITY_FACTOR       = 0.03  # tylko 3% opadu zostaje w mieście
+            RIVER_FACTOR      = 1.0  # % opadu do Wisły
+            FLOODPLAIN_FACTOR = 0.9  # % opadu zostaje na terenach zalewowych
+            CITY_FACTOR       = 0.3  # tylko % opadu zostaje w mieście
 
             # rzeka
             self.water[self.river_mask] += rain_m * RIVER_FACTOR
@@ -106,7 +107,7 @@ class FloodModel:
 
         self.current_rain_index += 1
 
-        LOCAL_BREACH_THRESHOLD = 0.90
+        LOCAL_BREACH_THRESHOLD = 0.95
         LOCAL_BREACH_RATE = 0.025        # spokojniejszy, ale długotrwały
         LOCAL_BREACH_DURATION = 8       # ile kroków po przebiciu (8 × 10 min = 80 min)
 
@@ -114,6 +115,9 @@ class FloodModel:
             self.breach_counter = 0
 
         river_level = np.max(self.water[self.river_mask])
+
+        if self.rain_series[self.current_rain_index] >= 0.002 and self.rain_series[self.current_rain_index-1] < 0.002:
+            self.breach_counter -= 2
 
         if river_level > LOCAL_BREACH_THRESHOLD and self.breach_counter < LOCAL_BREACH_DURATION:
             breach_flow = (river_level - LOCAL_BREACH_THRESHOLD) * LOCAL_BREACH_RATE
@@ -127,6 +131,9 @@ class FloodModel:
         if self.current_rain_index % 2 == 0:
             self.water = self.flood_step(self.area, self.water, self.k, self.roads_mask)
 
+        # woda w rzece zawsze minimum 0.5 m
+        self.water[self.river_mask] = np.maximum(self.water[self.river_mask], 0.5)
+        
         # drenaz miasta
         DRAINAGE_CITY = 0.002  # 2 mm na krok znika w mieście
         #self.water[city_mask] = np.clip(self.water[city_mask] - DRAINAGE_CITY, 0, None)
@@ -176,8 +183,8 @@ class FloodModel:
 
         # parametry tłumienia
         MIN_FLOW = 0.01   # woda poniżej 1 cm stoi w miejscu
-        FLOW_CAP = 0.12   # max 12% wody może wypłynąć z komórki
-        FRICTION = 0.30   # opór terenu (0.0 brak oporu, 1.0 ogromny opór)
+        FLOW_CAP = 0.5   # max % wody może wypłynąć z komórki
+        FRICTION = 0.05   # opór terenu (0.0 brak oporu, 1.0 ogromny opór)
 
         for i in range(1, height.shape[0]-1):
             for j in range(1, height.shape[1]-1):
@@ -194,7 +201,7 @@ class FloodModel:
                 if total_flow <= 0 or not np.isfinite(total_flow):
                     continue
 
-                # drogi → szybszy spływ
+                # drogi -> szybszy spływ
                 #local_k = k * (1.8 if roads_mask[i,j] else 1.0)
                 if self.custom_overflow_mask[i, j]:
                     local_k = k * 2.5   # zalew = szybkie, agresywne rozlewanie
@@ -329,28 +336,3 @@ class FloodModel:
         total_mm = sum(h*mmph for h, mmph in rain_block)
         print(f"Łączny opad scenariusza ≈ {total_mm} mm")
         return rain_series
-
-
-
-
-'''
-# polaczenie ze soba pobranych obszarow tiff
-tiffs = glob.glob("dem/*.tiff")
-src_files_to_mosaic = []
-for fp in tiffs:
-    src = rasterio.open(fp)
-    src_files_to_mosaic.append(src)
-
-mosaic, out_transform = merge(src_files_to_mosaic)
-
-out_meta = src.meta.copy()
-out_meta.update({
-    "driver": "GTiff",
-    "height": mosaic.shape[1],
-    "width": mosaic.shape[2],
-    "transform": out_transform
-})
-'''
-# zapis połączonego DEM
-# with rasterio.open("krakow_merged.tif", "w", **out_meta) as dest:
-#     dest.write(mosaic)
