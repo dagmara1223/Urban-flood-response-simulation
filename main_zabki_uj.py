@@ -1,0 +1,174 @@
+from datetime import datetime
+import os
+import networkx as nx
+#from evac_model import Model
+from flood_produkcja import FloodModel
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from rasterio.transform import rowcol
+from pyproj import Transformer
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+
+# zabka
+def load_zabka_pixels(csv_path, model):
+    """
+    Zwraca listę (row, col) Żabek w układzie macierzy model.area
+    """
+    df = pd.read_csv(csv_path)
+
+    # tylko Kraków
+    df = df[df["city"].str.contains("Krak", case=False, na=False)]
+
+    # transformacja WGS84 -> CRS DEM
+    transformer = Transformer.from_crs(
+        "EPSG:4326", model.raster_crs, always_xy=True
+    )
+
+    zabki_pixels = []
+
+    for _, row in df.iterrows():
+        lon, lat = row["lng"], row["lat"]
+
+        # lon/lat → x/y DEM
+        x, y = transformer.transform(lon, lat)
+
+        # x/y → pixel
+        r, c = rowcol(model.transform, x, y)
+
+        # sprawdzamy czy mieści się w obszarze
+        r0, r1, c0, c1 = model.area_bounds
+        if r0 <= r < r1 and c0 <= c < c1:
+            # uwaga: masz downsampling ::4
+            rr = (r - r0) // 4
+            cc = (c - c0) // 4
+            zabki_pixels.append((rr, cc))
+
+    return zabki_pixels
+
+
+def build_example_graph(path):
+    # Tworzenie grafu drogowego
+    G = nx.read_graphml(path)
+    G = nx.convert_node_labels_to_integers(G)
+    for n, data in G.nodes(data=True):
+        data['pos'] = (float(data['x']), float(data['y']))
+        data['pos_array'] = (int(data['pos_array_x']), int(data['pos_array_y']))
+    G.remove_edges_from(nx.selfloop_edges(G))
+    return G
+
+
+if __name__ == "__main__":
+
+    run_flood_simulation = True
+    run_evacuation_simulation = False
+
+    # Flood simulation parameters ------------------------------------------------------------
+    k = 0.15 # startowo 
+    dem_path = "krakow_merged.tif"
+    # rynek
+    area_bounds=(0, 4838, 0, 11138)
+    #area_bounds = (2000, 3200, 3500, 4800)
+    # scenariusz odwzorowuje realne sumy opadów z powodzi 2010 w Krakowie mamy ≈141 mm
+    rain_block = [
+        (6,6), # 6 h po 6mm/h - front pierwszy
+        (12,3), # 12 h po 3 mm/h - dlugotrwaly deszcz
+        (3,15), # 3h po 15 mm/h - najsilniejsze opady -> podtopienia
+        (6,4) # 6h po 4 mm/h - schodzenie
+    ]
+    #-------------------------------------------------------------------------------------------
+
+    # Evacuation simulation parameters -------------------------------------------------------
+    graph_path = 'krakow_roads2.graphml'
+    dem_path = 'krakow_merged.tif'
+    n_agents = 150
+    n_rescue_agents = 5
+    G = build_example_graph(graph_path)
+    #-------------------------------------------------------------------------------------------
+
+    # Run evacuation simulation ---------------------------------------------------------------
+    if run_evacuation_simulation:
+        # create output folder with timestamp
+        curr_time = datetime.now().strftime("%H_%M_%S")
+        folder_path = f"output/run_{curr_time}"
+        os.makedirs(folder_path, exist_ok=True)
+        log_path = os.path.join(folder_path, "log.txt")
+
+        flood_model = None
+        if run_flood_simulation:
+            flood_model = FloodModel(dem_path, k=k, area_bounds=area_bounds, rain_block=rain_block)
+        model = Model(n_agents=n_agents, n_rescue_agents=n_rescue_agents, roads_graph=G, dem_path=dem_path, log_path=folder_path, flood_model=flood_model)
+        
+        for t in range(200):
+            with open(log_path, "a") as f:
+                f.write(f"\n--- Step {t} ---\n")
+            print(f"--- Step {t} ---")
+            model.step()
+
+    # Run flood simulation (only if no evacuation) -------------------------------------------
+    if run_flood_simulation and not run_evacuation_simulation:
+        
+        model = FloodModel(dem_path, k=k, area_bounds=area_bounds, rain_block=rain_block)
+        zabka_pixels = load_zabka_pixels("zabka_shop.csv", model)
+
+        plt.figure(figsize=(10,6))
+        for t in range(len(model.rain_series)):
+            model.step(t)
+
+            if t % 10 == 0:
+
+                fig, ax = plt.subplots(figsize=(12,6))
+
+                # dem
+                ax.imshow(model.area, cmap='terrain',
+                        vmin=model.global_min,
+                        vmax=model.global_max)
+
+                # Żabki 🐸
+                frog_icon = plt.imread("zabka.png")
+                for r, c in zabka_pixels:
+                    imagebox = OffsetImage(frog_icon, zoom=0.02)
+                    ab = AnnotationBbox(imagebox, (c, r), frameon=False, zorder=10)
+                    ax.add_artist(ab)
+                    
+                # maska wody
+                vis_water = model.water.copy()
+                vis_water[model.roads_mask] = 0
+                water_mask = np.where(vis_water > 0.1, vis_water, np.nan)
+
+                ax.imshow(
+                    water_mask,
+                    cmap='Blues',
+                    alpha=0.7,
+                    vmin=0,
+                    vmax=1.0
+                )
+                ax.imshow(model.river_mask, cmap="Blues", alpha=0.3)
+
+                # kontury woda glebsza 
+                try:
+                    contours = ax.contour(
+                        model.water,
+                        levels=[0.05,0.10,0.20,0.40,0.60],
+                        colors='blue',
+                        linewidths=0.6
+                    )
+                    ax.clabel(contours, inline=True, fontsize=6, fmt="%.2f m")
+                except:
+                    pass
+                    
+
+                ax.set_title(f"Krok {t} – Kraków (zalanie >2 cm)")
+                ax.axis("off")
+
+                outfile = f"frames/frame_{t:04d}.png"
+                fig.savefig(outfile, dpi=150, bbox_inches='tight')
+                plt.close(fig)
+
+                print("Zapisano:", outfile)
+
+
+
+        
+        
+
