@@ -128,7 +128,7 @@ class FloodModel:
             self.water = self.flood_step(self.area, self.water, self.k, self.roads_mask)
 
         # drenaz miasta
-        DRAINAGE_CITY = 0.002  # 2 mm na krok znika w mieście
+        DRAINAGE_CITY = 0.0005  # 0.5 mm na krok znika w mieście
         #self.water[city_mask] = np.clip(self.water[city_mask] - DRAINAGE_CITY, 0, None)
         drain_mask = city_mask & (~self.custom_overflow_mask)
         self.water[drain_mask] = np.clip(self.water[drain_mask] - DRAINAGE_CITY, 0, None)
