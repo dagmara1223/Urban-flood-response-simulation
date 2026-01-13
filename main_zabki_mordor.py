@@ -10,6 +10,27 @@ from rasterio.transform import rowcol
 from pyproj import Transformer
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
+#mord nowohucka
+def point_to_pixel(lat, lon, model):
+    """
+    Zamienia (lat, lon) na (row, col) w macierzy model.area
+    Zwraca None jeśli punkt poza obszarem.
+    """
+    transformer = Transformer.from_crs(
+        "EPSG:4326", model.raster_crs, always_xy=True
+    )
+
+    x, y = transformer.transform(lon, lat)
+    r, c = rowcol(model.transform, x, y)
+
+    r0, r1, c0, c1 = model.area_bounds
+    if not (r0 <= r < r1 and c0 <= c < c1):
+        return None
+
+    rr = (r - r0) // 4
+    cc = (c - c0) // 4
+    return rr, cc
+
 # zabka
 def load_zabka_pixels(csv_path, model):
     """
@@ -30,16 +51,16 @@ def load_zabka_pixels(csv_path, model):
     for _, row in df.iterrows():
         lon, lat = row["lng"], row["lat"]
 
-        # lon/lat → x/y DEM
+        # lon/lat -> x/y DEM
         x, y = transformer.transform(lon, lat)
 
-        # x/y → pixel
+        # x/y -> pixel
         r, c = rowcol(model.transform, x, y)
 
         # sprawdzamy czy mieści się w obszarze
         r0, r1, c0, c1 = model.area_bounds
         if r0 <= r < r1 and c0 <= c < c1:
-            # uwaga: masz downsampling ::4
+            # downsampling 
             rr = (r - r0) // 4
             cc = (c - c0) // 4
             zabki_pixels.append((rr, cc))
@@ -111,6 +132,12 @@ if __name__ == "__main__":
         model = FloodModel(dem_path, k=k, area_bounds=area_bounds, rain_block=rain_block)
         zabka_pixels = load_zabka_pixels("zabka_shop.csv", model)
 
+        mordor_pixel = point_to_pixel(
+            50.05349537307837,
+            19.990152203404048,
+            model
+        )
+
         plt.figure(figsize=(10,6))
         for t in range(len(model.rain_series)):
             model.step(t)
@@ -124,12 +151,29 @@ if __name__ == "__main__":
                         vmin=model.global_min,
                         vmax=model.global_max)
 
-                # Żabki 🐸
+                # Żabki 
                 frog_icon = plt.imread("zabka.png")
                 for r, c in zabka_pixels:
                     imagebox = OffsetImage(frog_icon, zoom=0.02)
                     ab = AnnotationBbox(imagebox, (c, r), frameon=False, zorder=10)
                     ax.add_artist(ab)
+                
+                #mord 
+                if mordor_pixel is not None:
+                    mr, mc = mordor_pixel
+
+                    # czerwony punkt
+                    ax.plot(mc, mr, 'ro', markersize=6, zorder=15)
+
+                    # etykieta
+                    ax.text(
+                        mc + 5, mr,
+                        "Mordor\n(Kraków)",
+                        color='red',
+                        fontsize=8,
+                        weight='bold',
+                        zorder=16
+                    )
                     
                 # maska wody
                 vis_water = model.water.copy()
@@ -166,9 +210,3 @@ if __name__ == "__main__":
                 plt.close(fig)
 
                 print("Zapisano:", outfile)
-
-
-
-        
-        
-
