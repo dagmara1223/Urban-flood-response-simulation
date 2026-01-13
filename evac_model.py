@@ -12,12 +12,12 @@ from agent_model.rescue_agent import RescueAgent, RescueState
 from flood_agent.model.model import FloodModel
 
 class EvacModel(mesa.Model):
-    def __init__(self, n_agents, roads_graph, dem_path, flood_model):
+    def __init__(self, n_agents, roads_graph, dem_path, flood_model: FloodModel, n_rescue=12):
         super().__init__()
         self.count = 0
 
         self.space = mesa.space.NetworkGrid(roads_graph) # Create a NetworkGrid based on the road graph
-        self.create_rescue_agents()
+        self.create_rescue_agents(n=n_rescue)
         self.create_agents(n=n_agents)
         self.call_center = CallCenterAgent(self)
         self.safety_spot = [n for n, d in self.space.G.nodes(data=True) if d.get("is_safe_spot")] # Example of a safe spot node
@@ -49,13 +49,17 @@ class EvacModel(mesa.Model):
         }
 
     
-    def create_rescue_agents(self):
+    def create_rescue_agents(self, n: int):
         spawn_points = [n for n, d in self.space.G.nodes(data=True) if d.get("is_rescue_base")]
+        i = 0
         for node in spawn_points:
             for _ in range(3):
                 agent = RescueAgent(self, start_node=node)
                 self.agents.add(agent)
                 self.space.place_agent(agent, node)
+            i += 3
+            if i >= n:
+                break
     
     def create_agents(self, n: int):
         valid_nodes = [node for node, data in self.space.G.nodes(data=True) if 300 <= data['pos_array'][1] <= 1000 
@@ -101,12 +105,16 @@ class EvacModel(mesa.Model):
             if self.flood_model is not None:
                 self.flood_step() # Update water depth on graph nodes
 
+        if self.count%20 == 0 and self.count > 0:    
+            self.create_agents(100)
+                   
+
         if self.count%5 == 0:
             self.call_center.step()
 
         
         self.agents.do("step")
-        self.visualise_step() # Visualize the current state of the model, just for testing
+        self.visualise_step()
         
         self.count += 1
 
@@ -138,8 +146,9 @@ class EvacModel(mesa.Model):
                 x, y = x0, y0
             if isinstance(agent, RescueAgent):
                 rescue_positions[agent.unique_id] = (x, y)
-            else:
-                agent_positions[agent.unique_id] = (x, y)
+            if isinstance(agent, CitizenAgent):
+                if agent.state != CitizenState.SAFE:
+                    agent_positions[agent.unique_id] = (x, y)
 
         self.visual_data["agent_positions"].append(agent_positions)
         self.visual_data["rescue_positions"].append(rescue_positions)
@@ -154,7 +163,7 @@ def animate_simulation(model:EvacModel, save_path="evacuation_simulation.mp4", f
     pos = nx.get_node_attributes(G, "pos_array")
     safety_spot = model.safety_spot
 
-    fig2, ax = plt.subplots(figsize=(10,10))
+    fig2, ax = plt.subplots(figsize=(10,5))
     def update(frame):
         ax.clear()
         if model.flood_model is not None:
@@ -162,8 +171,8 @@ def animate_simulation(model:EvacModel, save_path="evacuation_simulation.mp4", f
                       vmin=model.flood_model.global_min, vmax=model.flood_model.global_max)
             water = model.visual_data["water"][frame]
             water_mask = np.where(water > 0.1, water, np.nan)
-            ax.imshow(water_mask, cmap='Blues', alpha=0.9, vmin=0, vmax=1.0)
-            ax.imshow(model.flood_model.river_mask, cmap="Blues", alpha=0.3)
+            ax.imshow(water_mask, cmap='Blues', alpha=0.6, vmin=-0.5, vmax=1.0)
+            ax.imshow(np.where(model.flood_model.river_mask == True, model.flood_model.river_mask, np.nan), cmap="Blues", alpha=0.7, vmin=-0.5, vmax=1.0)
             
         
         # rysuj sieć dróg
@@ -196,7 +205,7 @@ def animate_simulation(model:EvacModel, save_path="evacuation_simulation.mp4", f
     plt.close(fig2)
     print(f"Animacja zapisana: {save_path}")
 
-
+    '''
     fig, ax = plt.subplots(figsize=(10,10))
     plt.subplots_adjust(bottom=0.15)
 
@@ -207,12 +216,8 @@ def animate_simulation(model:EvacModel, save_path="evacuation_simulation.mp4", f
                       vmin=model.flood_model.global_min, vmax=model.flood_model.global_max)
             water = model.visual_data["water"][frame]
             water_mask = np.where(water > 0.1, water, np.nan)
-            ax.imshow(water_mask, cmap='Blues', alpha=0.9, vmin=0, vmax=1.0)
-            ax.imshow(model.flood_model.river_mask, cmap="Blues", alpha=0.3)
-            try:
-                ax.contour(water, levels=[0.05,0.10,0.20,0.40,0.60], colors='blue', linewidths=0.6)
-            except:
-                pass
+            ax.imshow(water_mask, cmap='Blues', alpha=0.6, vmin=-0.5, vmax=1.0)
+            ax.imshow(np.where(model.flood_model.river_mask == True, model.flood_model.river_mask, np.nan), cmap="Blues", alpha=0.7, vmin=-0.5, vmax=1.0)
         
         # rysuj sieć dróg
         safe_edges = [(u,v,d) for u,v,d in G.edges(data=True) if d.get('safe')=='yes']
@@ -258,6 +263,7 @@ def animate_simulation(model:EvacModel, save_path="evacuation_simulation.mp4", f
     b_prev.on_clicked(prev_step)
 
     plt.show()
+    '''
 
 import pandas as pd
 def save_stats_to_csv(model, folder_path):

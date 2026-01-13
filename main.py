@@ -4,8 +4,9 @@ import networkx as nx
 from evac_model import EvacModel, animate_simulation, save_stats_to_csv
 from flood_agent.model.model import FloodModel
 import matplotlib.pyplot as plt
-from flood_agent.validation.validation import validate_model_flood
+#from flood_agent.validation.validation import validate_model_flood
 import rasterio
+import numpy as np
 
 def build_example_graph(path):
     # Tworzenie grafu drogowego
@@ -21,8 +22,8 @@ def build_example_graph(path):
 if __name__ == "__main__":
 
     run_flood_simulation = True
-    run_evacuation_simulation = False
-    run_validation = True
+    run_evacuation_simulation = True
+    run_validation = False
 
     # Flood simulation parameters ------------------------------------------------------------
     k = 0.15 # startowo 
@@ -53,20 +54,16 @@ if __name__ == "__main__":
         folder_path = f"output/run_{curr_time}"
         os.makedirs(folder_path, exist_ok=True)
 
-        flood_model = None
-        if run_flood_simulation:
-            flood_model = FloodModel(dem_path, k=k, area_bounds=area_bounds, rain_block=rain_block)
-        model = EvacModel(n_agents=n_agents, roads_graph=G, dem_path=dem_path, flood_model=flood_model)
+        flood_model = FloodModel(dem_path, k=k, area_bounds=area_bounds, rain_block=rain_block)
+        model = EvacModel(n_agents=n_agents, roads_graph=G, dem_path=dem_path, flood_model=flood_model, n_rescue=6) # 3xRescue
         
         for t in range(1600):
             print(f"Step {t}")
-            model.step()
-            if t % 80 == 0:
-                model.create_agents(200)
+            model.step()                
         
         # Create animation
         save_stats_to_csv(model, folder_path)
-        anim = animate_simulation(model, save_path=os.path.join(folder_path, "evacuation_simulation.mp4"), fps=5)
+        animate_simulation(model, save_path=os.path.join(folder_path, "evacuation_simulation.mp4"), fps=5)
 
     # Run flood simulation (only if no evacuation) -------------------------------------------
     if run_flood_simulation and not run_evacuation_simulation:
@@ -100,18 +97,26 @@ if __name__ == "__main__":
                 )
                 ax.imshow(model.river_mask, cmap="Blues", alpha=0.3)
 
-                # legenda 1 (wysokość terenu)
-                cbar1 = plt.colorbar(im1, fraction=0.046, pad=0.04)
-                cbar1.set_label("Wysokość terenu [m n.p.m.]")
+                # kontury woda glebsza 
+                try:
+                    contours = ax.contour(
+                        model.water,
+                        levels=[0.05,0.10,0.20,0.40,0.60],
+                        colors='blue',
+                        linewidths=0.6
+                    )
+                    ax.clabel(contours, inline=True, fontsize=6, fmt="%.2f m")
+                except:
+                    pass
 
-                # legenda 2 (głębokość wody)
-                cbar2 = plt.colorbar(im2, fraction=0.046, pad=0.12)
-                cbar2.set_label("Głębokość wody [m]")
+                ax.set_title(f"Krok {t} – Kraków (zalanie >2 cm)")
+                ax.axis("off")
 
-                plt.title(f"Deszcz + spływ powierzchniowy — krok {t}")
-                plt.pause(0.5)
-        plt.tight_layout()
-        plt.show()
+                outfile = f"output/a/frame_{t:04d}.png"
+                fig.savefig(outfile, dpi=150, bbox_inches='tight')
+                plt.close(fig)
+
+                print("Zapisano:", outfile)
     
     if run_flood_simulation and run_validation:
         map_path = "Data/validation_krakow.tif"
