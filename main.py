@@ -22,7 +22,7 @@ def build_example_graph(path):
 if __name__ == "__main__":
 
     run_flood_simulation = True
-    run_evacuation_simulation = False
+    run_evacuation_simulation = True
     run_validation = False
 
     # Flood simulation parameters ------------------------------------------------------------
@@ -54,8 +54,8 @@ if __name__ == "__main__":
         folder_path = f"output/run_{curr_time}"
         os.makedirs(folder_path, exist_ok=True)
 
-        flood_model = flood_model = FloodModel(dem_path, k=k, area_bounds=area_bounds, rain_block=rain_block)
-        model = EvacModel(n_agents=n_agents, roads_graph=G, dem_path=dem_path, flood_model=flood_model, n_rescue=6)
+        flood_model = FloodModel(dem_path, k=k, area_bounds=area_bounds, rain_block=rain_block)
+        model = EvacModel(n_agents=n_agents, roads_graph=G, dem_path=dem_path, flood_model=flood_model, n_rescue=6) # 3xRescue
         
         for t in range(1600):
             print(f"Step {t}")
@@ -63,7 +63,7 @@ if __name__ == "__main__":
         
         # Create animation
         save_stats_to_csv(model, folder_path)
-        anim = animate_simulation(model, save_path=os.path.join(folder_path, "evacuation_simulation.mp4"), fps=5)
+        animate_simulation(model, save_path=os.path.join(folder_path, "evacuation_simulation.mp4"), fps=5)
 
     # Run flood simulation (only if no evacuation) -------------------------------------------
     if run_flood_simulation and not run_evacuation_simulation:

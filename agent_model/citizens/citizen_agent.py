@@ -85,6 +85,10 @@ class CitizenAgent(mesa.Agent):
         Manages agent behavior at the next step of simulation depending on its state.
         """
         if self.state != CitizenState.UNSAFE:
+            if self.state == CitizenState.CRITICALLY_UNSAFE:
+                water_depth = self.model.space.G.nodes[self.current_edge[0]].get("depth", 0)
+                if water_depth <= 0.5:
+                    self.state = CitizenState.UNSAFE
             return
         if self.current_edge[0] in self.model.safety_spot:
             self.model.stats["safety_arrival_times"].append(self.model.count - self.start_step)

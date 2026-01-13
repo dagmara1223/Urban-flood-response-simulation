@@ -104,18 +104,17 @@ class EvacModel(mesa.Model):
         if self.count%10 == 0:
             if self.flood_model is not None:
                 self.flood_step() # Update water depth on graph nodes
-                rain = self.flood_model.rain_series[self.flood_model.current_rain_index]
-                if rain >= 0.001:
-                    self.create_agents(120)
-                    if rain >= 0.002:
-                        self.create_agents(120)
+
+        if self.count%20 == 0 and self.count > 0:    
+            self.create_agents(100)
+                   
 
         if self.count%5 == 0:
             self.call_center.step()
 
         
         self.agents.do("step")
-        self.visualise_step() # Visualize the current state of the model, just for testing
+        self.visualise_step()
         
         self.count += 1
 
@@ -147,8 +146,9 @@ class EvacModel(mesa.Model):
                 x, y = x0, y0
             if isinstance(agent, RescueAgent):
                 rescue_positions[agent.unique_id] = (x, y)
-            else:
-                agent_positions[agent.unique_id] = (x, y)
+            if isinstance(agent, CitizenAgent):
+                if agent.state != CitizenState.SAFE:
+                    agent_positions[agent.unique_id] = (x, y)
 
         self.visual_data["agent_positions"].append(agent_positions)
         self.visual_data["rescue_positions"].append(rescue_positions)
