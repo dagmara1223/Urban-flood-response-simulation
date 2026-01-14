@@ -4,7 +4,7 @@ import networkx as nx
 import sys
 
 from agent_model.citizen_agent import CitizenDecisionMakingMode
-from agent_model.evac_model import EvacModel, animate_simulation, save_stats_to_csv
+from agent_model.evac_model import EvacModel, save_stats_to_csv, animate_simulation_live
 from flood_agent.model import FloodModel
 from run_analysis import stats_summary
 
@@ -85,6 +85,6 @@ if __name__ == "__main__":
         model.step()                
     
     save_stats_to_csv(model, folder_path)
-    animate_simulation(model, save_path=os.path.join(folder_path, "evacuation_simulation.mp4"), fps=5)
-    
-    stats_summary(folder_path, "standard")
+    animate_simulation_live(model, fps=5)
+
+    stats_summary(folder_path, f"scenario {scenario}", flood_model.rain_series)

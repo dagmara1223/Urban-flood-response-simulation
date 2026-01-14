@@ -1,7 +1,0 @@
-mesa
-networkx
-matplotlib
-numpy
-osmnx
-pandas
-opencv-python
