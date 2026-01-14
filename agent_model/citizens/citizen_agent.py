@@ -61,7 +61,7 @@ class CitizenAgent(mesa.Agent):
         current-speed (float): Current speed of an agent. Current speed cannot exceed maximum speed. When the agent is flooded, its speed decreases.
 
     """
-    def __init__(self, model, start_node):
+    def __init__(self, model, start_node, decision_mode=None):
         super().__init__(model)
         self.current_edge = (start_node, None)  # current edge (start_node -> next_node)
         self.progress = 0.0  # 0 = at start_node, 1 = at next_node
@@ -69,6 +69,8 @@ class CitizenAgent(mesa.Agent):
         self.state = CitizenState.UNSAFE
         self.decision_making_mode = random.choice([CitizenDecisionMakingMode.RANDOM, CitizenDecisionMakingMode.DIJIKSTRA, CitizenDecisionMakingMode.DIJIKSTRA,
                                                    CitizenDecisionMakingMode.FOLLOWER, CitizenDecisionMakingMode.FOLLOWER])
+        if decision_mode is not None:
+            self.decision_making_mode = random.choice(decision_mode)   
 
         self.max_speed = np.random.normal(1.5, 0.3) * 60 # m/s 60 seconds per step
         self.current_speed = self.max_speed

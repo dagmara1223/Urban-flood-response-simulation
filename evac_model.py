@@ -12,11 +12,12 @@ from agent_model.rescue_agent import RescueAgent, RescueState
 from flood_agent.model.model import FloodModel
 
 class EvacModel(mesa.Model):
-    def __init__(self, n_agents, roads_graph, dem_path, flood_model: FloodModel, n_rescue=12):
+    def __init__(self, n_agents, roads_graph, dem_path, flood_model: FloodModel, n_rescue=12, decision_making_mode=None):
         super().__init__()
         self.count = 0
 
         self.space = mesa.space.NetworkGrid(roads_graph) # Create a NetworkGrid based on the road graph
+        self.decision_making_mode = decision_making_mode
         self.create_rescue_agents(n=n_rescue)
         self.create_agents(n=n_agents)
         self.call_center = CallCenterAgent(self)
@@ -66,12 +67,12 @@ class EvacModel(mesa.Model):
                        and (0 <= data['pos_array'][0] <= 600 or 1700 <= data['pos_array'][0] <= 2100)]
         for i in range(n//2):
             start_node = random.choice(valid_nodes)
-            agent = CitizenAgent(self, start_node=start_node)
+            agent = CitizenAgent(self, start_node=start_node, decision_mode=self.decision_making_mode)
             self.agents.add(agent)
             self.space.place_agent(agent, start_node)
 
             start_node = random.choice(list(self.space.G.nodes))
-            agent = CitizenAgent(self, start_node=start_node)
+            agent = CitizenAgent(self, start_node=start_node, decision_mode=self.decision_making_mode)
             self.agents.add(agent)
             self.space.place_agent(agent, start_node)
 
