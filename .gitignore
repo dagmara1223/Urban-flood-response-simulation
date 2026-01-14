@@ -7,5 +7,3 @@ output
 *.tiff
 *.tif
 cache/
-graph_test.py
-water_test.py

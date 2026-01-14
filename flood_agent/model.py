@@ -1,11 +1,6 @@
 import numpy as np
-#import matplotlib.pyplot as plt
-#from time import sleep
 import rasterio
-#from rasterio.merge import merge
-#import glob
 from rasterio.transform import rowcol, xy
-#import geopandas as gpd
 import osmnx as ox
 from rasterio.features import rasterize
 from shapely.geometry import box
@@ -14,29 +9,7 @@ from shapely.ops import transform as shp_transform
 from pyproj import CRS
 import scipy.ndimage as ndi
 
-"""
-Uproszczony model przepływu powierzchniowego.
-Dla każdej komórki siatki obliczamy różnicę poziomów wody - wysokość terenu + aktualna wysokość
-słupa wody względem sąsiadów. Nadmiar wody spływa do niżej osadzonych komórek.
 
-Paramtery: 
-height: np.array      - Dwuwymiarowa macierz (N x M) opisująca wysokość terenu w metrach.
-water: np.array       - Macierz o tych samych wymiarach zwracająca poziom słupa wody.
-k : float             - Określa, jaka część różnicy wysokości jest przenoszona do sąsiadów
-                        w jednym kroku czasowym.
-
-Zwraca:
-np.ndarray            - Zaktualizowana macierz `water` po jednym kroku czasowym symulacji
-
-Zasada przeplywu:
- 1. Całkowity poziom wody w komórce:
-       z(i,j) = height(i,j) + water(i,j)
-2. Różnica względem sąsiadów (8-kierunkowych):
-       Δz = z(i,j) - z(m,n)
-3. Przepływ możliwy tylko tam, gdzie Δz > 0.
-       Q(i,j→m,n) = k * max(0, Δz)
-4. Suma odpływów z komórki = suma dopływów do sąsiadów
-"""
 class FloodModel:
     def __init__(self, path_to_dem: str, k: float, area_bounds:tuple=(2000, 3200, 3500, 4800), rain_block:list=[(6,6), (12,3), (3,15), (6,4)]):
         self.height, self.transform, self.raster_crs = self.open_dem(path_to_dem)
@@ -51,38 +24,6 @@ class FloodModel:
         self.floodplain_mask = self.build_floodplain_mask()
         self.area_bounds = area_bounds
         self.custom_overflow_mask = self.build_custom_overflow_mask()
-
-    def select_river_section(self, x_min, x_max):
-        return self.river_idx[(self.river_idx[:,1] > x_min) & (self.river_idx[:,1] < x_max)]
-    def build_floodplain_mask(self):
-        """
-        Przybliżona strefa zalewowa:
-        - piksele nisko położone (np. dolne 40% wysokości),
-        - ALE tylko w sąsiedztwie Wisły (dylacja maski rzeki).
-        """
-        # niski teren 
-        low_alt = self.area < np.percentile(self.area, 40)
-
-        # sąsiedztwo rzeki (20 pikseli od koryta, po downsamplingu 4x)
-        near_river = ndi.binary_dilation(self.river_mask, iterations=20)
-
-        floodplain = low_alt & near_river
-        return floodplain
-
-    def build_custom_overflow_mask(self):
-        mask = np.zeros_like(self.area, dtype=bool)
-
-        # obszary dodatkowego wylewu 
-        mask[650:1000,50:500] = True  
-
-        mask[340:750, 1700:2100] = True
-
-        padded_roads = ndi.binary_dilation(self.roads_mask, iterations=5)
-
-        # ostateczna maska — tylko tam gdzie obszar użytkownika i powiększona droga
-        mask = mask & padded_roads
-
-        return mask
 
 
     def step(self, t):
@@ -127,20 +68,16 @@ class FloodModel:
 
             self.breach_counter += 1 # część wody ubywa z rzeki
 
-        # przeplyw co 5 krokow
         if self.current_rain_index % 2 == 0:
             self.water = self.flood_step(self.area, self.water, self.k, self.roads_mask)
 
-        # woda w rzece zawsze minimum 0.5 m
         self.water[self.river_mask] = np.maximum(self.water[self.river_mask], 0.5)
         
         # drenaz miasta
         DRAINAGE_CITY = 0.0005  # 0.5 mm na krok znika w mieście
-        #self.water[city_mask] = np.clip(self.water[city_mask] - DRAINAGE_CITY, 0, None)
         drain_mask = city_mask & (~self.custom_overflow_mask)
         self.water[drain_mask] = np.clip(self.water[drain_mask] - DRAINAGE_CITY, 0, None)
 
-        # diagnostyka
         if t % 10 == 0:
             non_river = ~self.river_mask
             max_outside = np.max(self.water[non_river])
@@ -163,7 +100,7 @@ class FloodModel:
         OVERFLOW_THRESHOLD = 1.0  # 1 m słupa wody w korycie
 
         if (not self.overflow_triggered) and (river_max_level > OVERFLOW_THRESHOLD):
-            print(f"*** UWAGA: Wisła PRZELAŁA WAŁY! (krok={t}, czas={t*10} minut) ***")
+            print(f"overflow triggered")
 
             self.k = 0.25  # więcej przepływu po zalaniu
 
@@ -174,9 +111,6 @@ class FloodModel:
             self.overflow_triggered = True
         
 
-
-    
-    # , rain: float= 0.0 - usuniety argument
     def flood_step(self, height, water, k, roads_mask):
         total = height + water
         new_water = water.copy()
@@ -219,6 +153,37 @@ class FloodModel:
 
         return np.clip(new_water, 0, None)
 
+    def select_river_section(self, x_min, x_max):
+        return self.river_idx[(self.river_idx[:,1] > x_min) & (self.river_idx[:,1] < x_max)]
+    def build_floodplain_mask(self):
+        """
+        Przybliżona strefa zalewowa:
+        - piksele nisko położone (np. dolne 40% wysokości),
+        - ALE tylko w sąsiedztwie Wisły (dylacja maski rzeki).
+        """
+        # niski teren 
+        low_alt = self.area < np.percentile(self.area, 40)
+
+        # sąsiedztwo rzeki (20 pikseli od koryta, po downsamplingu 4x)
+        near_river = ndi.binary_dilation(self.river_mask, iterations=20)
+
+        floodplain = low_alt & near_river
+        return floodplain
+
+    def build_custom_overflow_mask(self):
+        mask = np.zeros_like(self.area, dtype=bool)
+
+        # obszary dodatkowego wylewu 
+        mask[650:1000,50:500] = True  
+
+        mask[340:750, 1700:2100] = True
+
+        padded_roads = ndi.binary_dilation(self.roads_mask, iterations=5)
+
+        # ostateczna maska — tylko tam gdzie obszar użytkownika i powiększona droga
+        mask = mask & padded_roads
+
+        return mask
     
     def open_dem(self, dem_path: str):
         with rasterio.open(dem_path) as src:
@@ -334,5 +299,5 @@ class FloodModel:
             rain_series.extend([mmph_to_m_per_iteration(mmph)] * steps)
 
         total_mm = sum(h*mmph for h, mmph in rain_block)
-        print(f"Łączny opad scenariusza ≈ {total_mm} mm")
+        print(f"Łączny opad scenariusza = {total_mm} mm")
         return rain_series

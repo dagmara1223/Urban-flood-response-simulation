@@ -126,32 +126,3 @@ def stats_summary(folder, title):
 
     plt.savefig(f"{folder}/unsafe_roads_vs_rain.png")
     #plt.show()
-
-
-folder = "output/z_2xRescue"
-title = "2 times more rescuers"
-stats_summary(folder, title)
-
-folder = "output/z_3xRescue"
-title = "3 times more rescuers"
-stats_summary(folder, title)
-
-folder = "output/z_2xWater"
-title = "2 times more rainfall"
-stats_summary(folder, title)
-
-folder = "output/z_std"
-title = "Standard scenario"
-stats_summary(folder, title)
-
-folder = "output/z_d75f25"
-title = "75% agents are smart, 25% are followers"
-stats_summary(folder, title)
-
-folder = "output/z_d75r25"
-title = "75% agents are smart, 25% move randomly"
-stats_summary(folder, title)
-
-folder = "output/z_d75r125f125"
-title = "75% agents are smart, 12.5% move randomly, 12.5% are followers"
-stats_summary(folder, title)
