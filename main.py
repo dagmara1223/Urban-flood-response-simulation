@@ -21,11 +21,11 @@ def build_example_graph(path):
 if __name__ == "__main__":
 
     scenario = 0 # default
-    steps = 2
+    steps = 160
     if len(sys.argv) > 1:
         scenario = int(sys.argv[1])
         print(f"Scenario {sys.argv[1]}")
-        if scenario not in [0,1,2,3,4,5,6]: # 0: default, 1: 2 x recue, 2: 3 x rescue, 3: 2 x rain, 4: decision making 1, 5: decision making 2, 6: decision making 3
+        if scenario not in [0,1,2,3,4,5,6,7]: # 0: default, 1: 2 x recue, 2: 3 x rescue, 3: 2 x rain, 4: decision making 1...
             scenario = 0
         if len(sys.argv) > 2:
             steps = int(sys.argv[2])
@@ -71,6 +71,10 @@ if __name__ == "__main__":
         decision_making_mode = [CitizenDecisionMakingMode.FOLLOWER, CitizenDecisionMakingMode.FOLLOWER, CitizenDecisionMakingMode.DIJIKSTRA, 
                                 CitizenDecisionMakingMode.DIJIKSTRA, CitizenDecisionMakingMode.DIJIKSTRA, CitizenDecisionMakingMode.DIJIKSTRA,
                                 CitizenDecisionMakingMode.DIJIKSTRA, CitizenDecisionMakingMode.DIJIKSTRA]
+    elif scenario == 7:
+        decision_making_mode = [CitizenDecisionMakingMode.RANDOM, CitizenDecisionMakingMode.DIJIKSTRA, CitizenDecisionMakingMode.DIJIKSTRA,
+                                 CitizenDecisionMakingMode.DIJIKSTRA, CitizenDecisionMakingMode.FOLLOWER]
+        
     #-------------------------------------------------------------------------------------------
 
     curr_time = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
