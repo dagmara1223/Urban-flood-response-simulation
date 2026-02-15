@@ -105,4 +105,41 @@ Urban-flood-response-simulation/
 
 ```
 
+## Running the Simulation  ➡️  
+# Requirements  
+- Python 3.10+
+- Libraries: <br> 
+numpy <br>
+matplotlib <br>
+networkx <br>
+mesa <br>
+rasterio <br>
+geopandas <br>
+shapely <br>
+scipy<br>
+osmnx <br>
+
+- Install:  <br>
+pip install -r requirements.txt <br>
+
+- Run: <br>
+python main.py <br>
+
+- You can enable/disable:<br>
+run_flood_simulation = True    
+run_evacuation_simulation = True    
+run_validation = False
+
+## 📊 Outputs in a nutshell   
+The simulation produces: <br>
+- evacuation statistics (CSV)
+- time-series population states
+- rescue activity metrics
+- dangerous road segments analysis
+- flood maps
+- MP4 animations
+<br>
+
+
+
 
