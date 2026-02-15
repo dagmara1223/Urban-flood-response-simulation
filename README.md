@@ -1,90 +1,108 @@
-# 🌊 Urban Flood Response Simulation
+# 🌊 Urban Flood Response Simulation – Kraków 2010   
+Hybrid flood and evacuation simulation combining a raster-based hydrological model with an agent-based evacuation model.
+The project simulates urban flooding and human behavior during crisis situations using realistic terrain, rainfall scenarios, and road networks.
 
-Symulacja wieloagentowa przedstawiająca reakcję miasta Krakowa na powódź z 2010 roku.  
-Projekt ma na celu odwzorowanie zarówno **rozprzestrzeniania się wody na obszarze miasta**, jak i **zachowań agentów** reprezentujących mieszkańców, służby ratunkowe oraz centrum dowodzenia.  
-Model łączy dane topograficzne, graf dróg miejskich oraz inteligentne zachowania agentów, tworząc spójne środowisko do badania procesów ewakuacji i zarządzania kryzysowego.
+## Overview  
+This project models a historical flood scenario inspired by the 2010 flood in Kraków and studies:  
+- How flood water propagates in urban terrain,  
+- How citizens react to increasing danger,  
+- How rescue services impact evacuation efficiency,   
+- How different strategies influence survival and evacuation time.  
+<br>
+The system integrates: <br>  
+🌊 hydrodynamic surface water model   <br>
+🤖 agent-based evacuation model  <br>
+🗺️ real DEM terrain data  <br>
+🛣️ real road network graph  <br>
+💦 scenario-based rainfall simulation   <br>
+🔦 rescue logistics and mission assignment <br>
 
----
-## Requirements
-
-- Python packages:
-  pip install -r requirements.txt
-- System packages:
-  - ffmpeg (required for matplotlib.animation.FFMpegWriter)
-       - On conda: conda install -c conda-forge ffmpeg
-       - Or download from https://ffmpeg.org/download.html
----
-## 🎯 Cel projektu
-
-W maju 2010 roku Kraków został dotknięty jedną z największych powodzi w historii miasta.  
-W projekcie dążymy do stworzenia **symulacji komputerowej** tego typu zjawiska, aby:
-
-- odwzorować proces **rozlewania się wody** w miejskim środowisku,  
-- analizować skuteczność **reakcji mieszkańców i służb ratunkowych**,  
-- testować różne strategie **ewakuacji i koordynacji działań**,  
-- dostarczyć narzędzie edukacyjne i badawcze dla analiz systemów miejskich w sytuacjach kryzysowych.
-
-Model składa się z kilku współpracujących ze sobą modułów, które odpowiadają za różne aspekty powodzi i reagowania na nią.
-
----
-
-## 📁 Struktura projektu
+# Core Concepts   
+## Flood Model    
+A raster-based surface flow model inspired by storage-cell and diffusion approaches: <br>
+- DEM-based terrain representation <br>
+- 8-direction (Moore neighborhood) flow <br>
+- rainfall time blocks <br>
+- terrain-dependent retention <br>
+- increased flow along roads <br>
+- levee overflow mechanism <br>
+- flow regulation via empirical coefficient <br>
+<br>
+Each grid cell stores: <br>
+- terrain height <br>
+- water height <br>
+- total water level <br>
+<br>
+Water flows only toward lower total levels. <br>
 
 
+## Agent-Based Evacuation Model   
+Implemented with Mesa-style agents and road graph navigation.  <br>  
+### Citizens   
+Each citizen has: <br>
+- randomized walking speed <br>
+- dynamic speed reduction in water <br> 
+- safety state:     
+-- SAFE <br>
+-- UNSAFE <br> 
+-- CRITICALLY_UNSAFE <br>
+-- RESCUED <br>  
+- decision strategy:    
+-- DIJKSTRA (optimal path)      
+-- RANDOM (panic mode)      
+-- FOLLOWER (social behavior)    
+### Rescure Agents  
+Rescuers:    
+- are assigned dynamically to critical citizens <br>
+- can transport victims to safe zones <br>
+- operate in states:   
+-- AVAILABLE     
+-- ON_MISSION     
+-- CARRYING        
+
+Mission assignment is distance-based and availability-aware.  
+
+# Simulation   
+## Step 0 <br>
+<img width="700" height="493" alt="image" src="https://github.com/user-attachments/assets/2a8ecd6d-165c-4df2-976b-bc74ccf4be8f" /> <br> 
+## Step 63 <br>
+<img width="700" height="486" alt="image" src="https://github.com/user-attachments/assets/e8d6c4d7-9bdb-4258-9e08-8fc5dcc3d296" /> <br>
+## Step 147 <br>
+<img width="700" height="494" alt="image" src="https://github.com/user-attachments/assets/d5dcd71f-0b89-40c2-a226-b31ce155bdd7" /> <br>
+## Step 380 <br> 
+<img width="700" height="483" alt="image" src="https://github.com/user-attachments/assets/c71eefc9-0472-4c14-b8fb-1e4358f587b7" /> <br>
+## Step 594 <br> 
+<img width="700" height="493" alt="image" src="https://github.com/user-attachments/assets/3649263f-7b0f-4713-92b9-ffa2684648ef" /> <br>  
+
+## Results  
+<img width="700" height="600" alt="image" src="https://github.com/user-attachments/assets/ea1cbc80-d4cb-4f18-9572-7bc4addf7acb" /> <br>
+
+Following events:  
+- Decrease in the number of people that are safe -- SAFE_COUNT         
+-  Constant increase in the number of people at risk -- UNSAFE_COUNT      
+- Moderate increase in rescued people -- RESCUED_COUNT     
+- Small increase of people at critical risk -- CRITICALLY_UNSAFE
+  
+## 📁 Project Structure (simplified)
 ```
 Urban-flood-response-simulation/
 │
 ├── Data/
-│   ├── create_graph.py          # Skrypt tworzący graf drogowy miasta z pliku GraphML
-│   └── krakow_roads.graphml     # Sieć drogowa Krakowa (wykorzystywana przez agentów)
-│
-├── Integration/
-│   └── (puste)                  # Folder do integracji przepływu wody i ruchu agentów
+│   ├── create_graph.py
+|   ├── create_graph_water.py       
+│   └── krakow_roads_all_2.graphml    
 │
 ├── agent_model/
-│   ├── citizens/                # Podmodel agentów-mieszkańców
-│   ├── call_center_agent.py     # Agent centrum zgłoszeń (koordynacja i komunikacja)
-│   ├── evac_model.py            # Model ewakuacji i podejmowania decyzji przez obywateli
-│   └── rescue_agent.py          # Agent służb ratunkowych reagujących na zagrożenie
+│   ├── citizens/               
+│   ├── call_center_agent.py    
+│   ├── model_description.md           
+│   └── rescue_agent.py        
 │
-├── flood-agent/
-│   ├── data/                    # (puste) dane wejściowe do symulacji hydrologicznej
-│   ├── docs/                    # Dokumentacja PDF i opis matematyczny modelu przepływu
-│   ├── model/                   # Kod symulacji przepływu wody w Pythonie
-│   └── output/                  # Wyniki symulacji (mapy, wykresy, dane numeryczne)
-│
-├── .gitignore                   # Plik ignorujący zbędne pliki przy commitach
-├── README.md                    # Krótki opis projektu (ten plik)
-└── requirements.txt              # Lista wymaganych bibliotek Python
+├── flood-agent/                  
+│   ├── model/                  
+│   └── output/
+│   └── validation/                              
+
 ```
-## 🧩 Opis modułów
 
-### 🌧️ `flood-agent`
-Zawiera model hydrodynamiczny symulujący **przepływ powierzchniowy wody** na uproszczonej siatce terenu.  
-Model oblicza różnice wysokości między komórkami (teren + woda), pozwalając wodzie przepływać w dół zgodnie z gradientem wysokości.  
-Wynikiem są mapy rozlewania się wody w kolejnych krokach czasowych.
 
-### 🧍 `agent_model`
-Odpowiada za modelowanie **zachowań agentów** w środowisku miejskim.  
-Zawiera:
-- agentów-mieszkańców podejmujących decyzje o ewakuacji,  
-- agentów służb ratunkowych koordynujących działania,  
-- centrum zgłoszeń (agent komunikacyjny),  
-- modele trasowania na podstawie sieci dróg (`krakow_roads.graphml`).
-
-### 🗺️ `Data`
-Odpowiada za **przygotowanie grafu drogowego** na podstawie rzeczywistych danych z Krakowa.  
-Dzięki temu agenci mogą poruszać się po realistycznej siatce ulic i analizować, jak powódź wpływa na dostępność dróg.
-
-### 🔗 `Integration`
-Moduł integrujący przepływ wody z ruchem agentów — w przyszłości będzie łączyć model hydrologiczny z zachowaniami ludzi, aby uzyskać pełną symulację miasta w czasie rzeczywistym.
-
----
-
-## ⚙️ Uruchomienie projektu
-
-1. Zainstaluj wymagane biblioteki:
-   ```bash
-   pip install -r requirements.txt
-<br>
-   TBC
