@@ -108,27 +108,34 @@ Urban-flood-response-simulation/
 ## Running the Simulation  ➡️  
 # Requirements  
 - Python 3.10+
-- Libraries: <br> 
-numpy <br>
-matplotlib <br>
-networkx <br>
-mesa <br>
-rasterio <br>
-geopandas <br>
-shapely <br>
-scipy<br>
-osmnx <br>
+- Libraries: <br>
+```
+numpy 
+matplotlib 
+networkx 
+mesa 
+rasterio 
+geopandas
+shapely 
+scipy
+osmnx 
+```
 
 - Install:  <br>
-pip install -r requirements.txt <br>
+```
+pip install -r requirements.txt
+```
 
 - Run: <br>
-python main.py <br>
-
+```
+python main.py
+```
 - You can enable/disable:<br>
+```
 run_flood_simulation = True    
 run_evacuation_simulation = True    
 run_validation = False
+```
 
 ## 📊 Outputs in a nutshell   
 The simulation produces: <br>
