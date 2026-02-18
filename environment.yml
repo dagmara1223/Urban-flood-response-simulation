@@ -1,0 +1,17 @@
+name: flood-simulation
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy>=1.24
+  - pandas>=1.5
+  - matplotlib>=3.7
+  - scipy>=1.10
+  - networkx>=3.0
+  - shapely>=2.0
+  - rasterio>=1.3
+  - geopandas>=0.13
+  - pip
+  - pip:
+      - mesa>=3.0
+      - osmnx>=1.7

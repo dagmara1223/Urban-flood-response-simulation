@@ -75,24 +75,12 @@ with rasterio.open(dem_path) as src:
     transform = src.transform
     raster_crs = src.crs
 
-'''
-To się zmienia:
-'''
-#r0, r1 = 2000, 3200
-#c0, c1 = 3500, 4800
 r0, r1 = 0, 4838
 c0, c1 = 0, 11138
 height = height_full[r0:r1, c0:c1]
-#height = height[::6, ::6]
 
 nrows, ncols = height.shape
 water_map = np.zeros_like(height, dtype=float)
-
-#transform = transform * Affine.translation(c0, r0) * Affine.scale(6, 6)
-
-'''
-^^^^^^
-'''
 
 x_min, y_max = rasterio.transform.xy(transform, 0, 0)
 x_max, y_min = rasterio.transform.xy(transform, nrows-1, ncols-1)
@@ -133,7 +121,6 @@ edges_to_remove = []
 for u, v, k, data in G_walk.edges(keys=True, data=True):
     hw = data.get("highway")
 
-    # highway może być stringiem lub listą — trzeba obsłużyć oba przypadki
     if isinstance(hw, list):
         ok = any(h in allowed for h in hw)
     else:
@@ -146,7 +133,6 @@ G_walk.remove_edges_from(edges_to_remove)
 isolated = list(nx.isolates(G_walk))
 G_walk.remove_nodes_from(isolated)
 
-# Dodanie pozycji x,y w CRS DEM
 for n, data in G_drive.nodes(data=True):
     data['x'] = float(data['x'])
     data['y'] = float(data['y'])
@@ -180,7 +166,6 @@ for n, data in G_walk.nodes(data=True):
 def map_depth_to_graph(G, water_map, roads_raster, transform):
     nrows, ncols = water_map.shape
 
-    # pos_array: współrzędne węzłów w indeksach macierzy water_map
     pos_array = np.full((nrows, ncols), -1, dtype=int)
 
     for n, data in G.nodes(data=True):
@@ -191,20 +176,18 @@ def map_depth_to_graph(G, water_map, roads_raster, transform):
 
         data['depth'] = float(0)
 
-        # zapis pozycji w macierzy do węzła
         data['pos_array_y'] = int(row)
         data['pos_array_x'] = int(col)
 
-        pos_array[row, col] = n  # węzeł w danej komórce water_map
+        pos_array[row, col] = n
 
-    # Oznaczenie krawędzi
     for u, v, d in G.edges(data=True):
         d['safe'] = 'yes'
 
     return pos_array
 
 # -------------------------------
-# 5Wywołanie funkcji i zapis
+# 5 Wywołanie funkcji i zapis
 # -------------------------------
 pos_array = map_depth_to_graph(G, water_map, roads_raster_full, transform)
 
@@ -222,40 +205,3 @@ G= G.subgraph(largest_cc_nodes).copy()
 
 nx.write_graphml(G, output_graph_path)
 print(f"Graph saved to {output_graph_path}")
-
-
-'''
-# -------------------------------
-# 6Wizualizacja DEM + drogi + węzły grafu
-# -------------------------------
-import matplotlib.pyplot as plt
-plt.figure(figsize=(10, 10))
-im1 = plt.imshow(height, cmap='terrain', origin='upper')
-plt.imshow(water_map, cmap='Blues', alpha=0.5, origin='upper')
-cbar1 = plt.colorbar(im1, fraction=0.046, pad=0.04)
-cbar1.set_label("Wysokość terenu [m n.p.m.]")
-
-# Rysowanie dróg rasteryzowanych
-plt.imshow(roads_raster_full, cmap='Greys', alpha=0.3, origin='upper')
-
-
-x = nx.get_node_attributes(G, "pos_array_x")  
-y = nx.get_node_attributes(G, "pos_array_y")  
-
-# Rysowanie węzłów grafu
-node_x = [data['pos_array_x'] for n, data in G.nodes(data=True)]
-node_y = [data['pos_array_y'] for n, data in G.nodes(data=True)]
-plt.scatter(node_x, node_y, c='red', s=10, label='Graph nodes')
-
-# Rysowanie krawędzi
-for u, v in G.edges():
-    x_vals = [G.nodes[u]['pos_array_x'], G.nodes[v]['pos_array_x']]
-    y_vals = [G.nodes[u]['pos_array_y'], G.nodes[v]['pos_array_y']]
-    plt.plot(x_vals, y_vals, color='black', linewidth=1, alpha=0.7)
-
-plt.legend()
-plt.title("DEM + Flood Map + Graph Nodes + Roads")
-plt.xlabel("X [pixels/meters]")
-plt.ylabel("Y [pixels/meters]")
-plt.show()
-'''

@@ -1,10 +1,8 @@
 import random
 import mesa
 from enum import Enum
-
 import networkx as nx
 import numpy as np
-import matplotlib.pyplot as plt
 
 
 class CitizenState(Enum):

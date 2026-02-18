@@ -1,27 +1,26 @@
 import mesa
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
 import networkx as nx
 import random 
 import os
 
-from agent_model.citizens.citizen_agent import CitizenAgent, CitizenState
+from agent_model.citizen_agent import CitizenAgent, CitizenState
 from agent_model.call_center_agent import CallCenterAgent
 from agent_model.rescue_agent import RescueAgent, RescueState
-from flood_agent.model.model import FloodModel
+from flood_agent.model import FloodModel
 
 class EvacModel(mesa.Model):
     def __init__(self, n_agents, roads_graph, dem_path, flood_model: FloodModel, n_rescue=12, decision_making_mode=None):
         super().__init__()
         self.count = 0
 
-        self.space = mesa.space.NetworkGrid(roads_graph) # Create a NetworkGrid based on the road graph
+        self.space = mesa.space.NetworkGrid(roads_graph)
         self.decision_making_mode = decision_making_mode
         self.create_rescue_agents(n=n_rescue)
         self.create_agents(n=n_agents)
         self.call_center = CallCenterAgent(self)
-        self.safety_spot = [n for n, d in self.space.G.nodes(data=True) if d.get("is_safe_spot")] # Example of a safe spot node
+        self.safety_spot = [n for n, d in self.space.G.nodes(data=True) if d.get("is_safe_spot")]
 
         self.flood_model = flood_model
         if flood_model is not None:
@@ -104,7 +103,7 @@ class EvacModel(mesa.Model):
     def step(self):
         if self.count%10 == 0:
             if self.flood_model is not None:
-                self.flood_step() # Update water depth on graph nodes
+                self.flood_step()
 
         if self.count%20 == 0 and self.count > 0:    
             self.create_agents(100)
@@ -157,119 +156,11 @@ class EvacModel(mesa.Model):
             self.visual_data["water"].append(self.water.copy())
 
 
-from matplotlib.animation import FFMpegWriter
-def animate_simulation(model:EvacModel, save_path="evacuation_simulation.mp4", fps=5):
-    G = model.space.G
-    pos = nx.get_node_attributes(G, "pos_array")
-    safety_spot = model.safety_spot
-    fig2, ax = plt.subplots(figsize=(10,5))
-    def update(frame):
-        ax.clear()
-        if model.flood_model is not None:
-            data_clipped = np.clip(model.flood_model.area, 192.84, model.flood_model.global_max)
-            data_clipped[0,0]=0
-            ax.imshow(data_clipped, cmap='terrain', vmin=0, vmax=model.flood_model.global_max, alpha=0.5)
-            water = model.visual_data["water"][frame]
-            water_mask = np.where(water > 0.1, water, np.nan)
-            ax.imshow(water_mask, cmap='Blues', alpha=0.6, vmin=-0.5, vmax=1.0)
-            ax.imshow(np.where(model.flood_model.river_mask == True, model.flood_model.river_mask, np.nan), cmap="Blues", alpha=1, vmin=-0.5, vmax=1.0)
-            
-        
-        # rysuj sieć dróg
-        safe_edges = [(u,v,d) for u,v,d in G.edges(data=True) if d.get('safe')=='yes']
-        unsafe_edges = [(u,v,d) for u,v,d in G.edges(data=True) if d.get('safe')=='no']
-        nx.draw_networkx_edges(G, pos, edgelist=[(u,v) for u,v,_ in safe_edges], edge_color='black', width=0.5, ax=ax, alpha=0.7)
-        nx.draw_networkx_edges(G, pos, edgelist=[(u,v) for u,v,_ in unsafe_edges], edge_color='red', width=0.5, ax=ax)
-        nx.draw_networkx_nodes(G, pos, nodelist=safety_spot, node_color='green', node_size=8, ax=ax)
-
-        # rysuj agentów
-        agent_positions = model.visual_data["agent_positions"][frame]
-        rescue_positions = model.visual_data["rescue_positions"][frame]
-        ax.scatter([p[0] for p in agent_positions.values()],
-                   [p[1] for p in agent_positions.values()],
-                   c="red", s=1.5, label='Agents', zorder=2)
-        ax.scatter([p[0] for p in rescue_positions.values()],
-                   [p[1] for p in rescue_positions.values()],
-                   c="#116718", s=5, label='Rescue Agents', zorder=2)
-
-        ax.set_title(f"Step {frame}")
-        ax.legend()
-    ani = animation.FuncAnimation(fig2, update, frames=len(model.visual_data["agent_positions"]),
-                                  interval=1000/fps)
-
-    # Zapisz jako GIF
-    #ani.save(save_path, writer='pillow', fps=fps)
-    writer = FFMpegWriter(fps=fps, bitrate=2000)
-
-    ani.save(save_path, writer=writer)
-    plt.close(fig2)
-    print(f"Animacja zapisana: {save_path}")
-
-    '''
-    fig, ax = plt.subplots(figsize=(10,10))
-    plt.subplots_adjust(bottom=0.15)
-
-    def draw_frame(frame):
-        ax.clear()
-        if model.flood_model is not None:
-            ax.imshow(model.flood_model.area, cmap='terrain', 
-                      vmin=model.flood_model.global_min, vmax=model.flood_model.global_max)
-            water = model.visual_data["water"][frame]
-            water_mask = np.where(water > 0.1, water, np.nan)
-            ax.imshow(water_mask, cmap='Blues', alpha=0.6, vmin=-0.5, vmax=1.0)
-            ax.imshow(np.where(model.flood_model.river_mask == True, model.flood_model.river_mask, np.nan), cmap="Blues", alpha=0.7, vmin=-0.5, vmax=1.0)
-        
-        # rysuj sieć dróg
-        safe_edges = [(u,v,d) for u,v,d in G.edges(data=True) if d.get('safe')=='yes']
-        unsafe_edges = [(u,v,d) for u,v,d in G.edges(data=True) if d.get('safe')=='no']
-        nx.draw_networkx_edges(G, pos, edgelist=[(u,v) for u,v,_ in safe_edges], edge_color='black', width=0.5, ax=ax)
-        nx.draw_networkx_edges(G, pos, edgelist=[(u,v) for u,v,_ in unsafe_edges], edge_color='red', width=0.5, ax=ax)
-        nx.draw_networkx_nodes(G, pos, nodelist=safety_spot, node_color='green', node_size=5, ax=ax)
-
-        # rysuj agentów
-        agent_positions = model.visual_data["agent_positions"][frame]
-        rescue_positions = model.visual_data["rescue_positions"][frame]
-        ax.scatter([p[0] for p in agent_positions.values()],
-                   [p[1] for p in agent_positions.values()],
-                   c="#c800cf", s=2, label='Agents', zorder=2)
-        ax.scatter([p[0] for p in rescue_positions.values()],
-                   [p[1] for p in rescue_positions.values()],
-                   c='purple', s=5, label='Rescue Agents', zorder=2)
-
-        ax.set_title(f"Step {frame}")
-        ax.legend()
-
-    n_frames = len(model.visual_data["agent_positions"])
-    frame = [0]
-
-    draw_frame(frame[0])
-
-    # Funkcje przycisków
-    def next_step(event):
-        frame[0] = (frame[0] + 1) % n_frames
-        draw_frame(frame[0])
-        fig.canvas.draw_idle()
-
-    def prev_step(event):
-        frame[0] = (frame[0] - 1) % n_frames
-        draw_frame(frame[0])
-        fig.canvas.draw_idle()
-
-    ax_next = plt.axes([0.8, 0.05, 0.1, 0.04])
-    ax_prev = plt.axes([0.69, 0.05, 0.1, 0.04])
-    b_next = Button(ax_next, 'Next')
-    b_prev = Button(ax_prev, 'Prev')
-    b_next.on_clicked(next_step)
-    b_prev.on_clicked(prev_step)
-
-    plt.show()
-    '''
-
-import pandas as pd
 def save_stats_to_csv(model, folder_path):
+    import pandas as pd
     os.makedirs(folder_path, exist_ok=True)
 
-    # --- 1. Zapis statystyk krokowych ---
+    # 1. Zapis statystyk krokowych
     step_data = pd.DataFrame({
         "safe_count": model.stats["safe_count"],
         "rescued_count": model.stats["rescued_count"],
@@ -283,7 +174,7 @@ def save_stats_to_csv(model, folder_path):
     step_file = os.path.join(folder_path, "step_stats.csv")
     step_data.to_csv(step_file, index_label="step")
 
-    # --- 2. Zapis statystyk zdarzeniowych ---
+    # 2. Zapis statystyk zdarzeniowych
     event_stats = []
 
     for key in ["safety_arrival_times", "rescue_response_time", "rescue_to_safety_time"]:
@@ -314,7 +205,66 @@ def save_stats_to_csv(model, folder_path):
     event_file = os.path.join(folder_path, "event_stats.csv")
     pd.DataFrame(event_stats).to_csv(event_file, index=False)
 
-    print(f"Step stats saved to: {step_file}")
-    print(f"Event stats saved to: {event_file}")
+    print(f"Step stats saved to: {step_file}, Event stats saved to: {event_file}")
 
 
+def animate_simulation_live(model: EvacModel, fps=5):
+    import matplotlib.animation as animation
+
+    G = model.space.G
+    pos = nx.get_node_attributes(G, "pos_array")
+    safety_spot = model.safety_spot
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    def update(frame):
+        ax.clear()
+
+        if model.flood_model is not None:
+            data_clipped = np.clip(model.flood_model.area, 192.84, model.flood_model.global_max)
+            data_clipped[0,0]=0
+            ax.imshow(data_clipped, cmap='terrain', vmin=0, vmax=model.flood_model.global_max, alpha=0.5)
+            water = model.visual_data["water"][frame]
+            water_mask = np.where(water > 0.1, water, np.nan)
+            ax.imshow(water_mask, cmap='Blues', alpha=0.6, vmin=-0.5, vmax=1.0)
+            ax.imshow(np.where(model.flood_model.river_mask == True, model.flood_model.river_mask, np.nan), cmap="Blues", alpha=1, vmin=-0.5, vmax=1.0)
+
+        # drogi
+        safe_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get("safe") == "yes"]
+        unsafe_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get("safe") == "no"]
+
+        nx.draw_networkx_edges(G, pos, edgelist=safe_edges,
+                               edge_color="black", width=0.5, ax=ax, alpha=0.7)
+        nx.draw_networkx_edges(G, pos, edgelist=unsafe_edges,
+                               edge_color="red", width=0.5, ax=ax)
+
+        nx.draw_networkx_nodes(G, pos, nodelist=safety_spot,
+                               node_color="green", node_size=8, ax=ax)
+
+        # agenci
+        agent_positions = model.visual_data["agent_positions"][frame]
+        rescue_positions = model.visual_data["rescue_positions"][frame]
+
+        ax.scatter(
+            [p[0] for p in agent_positions.values()],
+            [p[1] for p in agent_positions.values()],
+            c="red", s=1.5, label="Citizens"
+        )
+
+        ax.scatter(
+            [p[0] for p in rescue_positions.values()],
+            [p[1] for p in rescue_positions.values()],
+            c="#116718", s=5, label="Rescue"
+        )
+
+        ax.set_title(f"Step {frame}")
+        ax.legend(loc="upper right")
+
+    anim = animation.FuncAnimation(
+        fig,
+        update,
+        frames=len(model.visual_data["agent_positions"]),
+        interval=1000 / fps
+    )
+
+    plt.show()

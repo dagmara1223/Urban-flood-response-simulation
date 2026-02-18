@@ -1,10 +1,8 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
 
-
-def stats_summary(folder, title):
+def stats_summary(folder, title, rain=None):
     event_stats = pd.read_csv(f"{folder}/event_stats.csv")
     step_stats = pd.read_csv(f"{folder}/step_stats.csv")
 
@@ -73,22 +71,6 @@ def stats_summary(folder, title):
     plt.savefig(f"{folder}/unsafe_roads.png")
     #plt.show()
 
-
-    # CORRELATION MATRIX
-    plt.figure(figsize=(10,8))
-    sns.heatmap(step_stats.drop(columns=["step"]).corr(), annot=True, fmt=".2f", cmap="coolwarm")
-    plt.title(f"Correlation matrix among step statistics - {title}")
-    plt.xticks(rotation=45, ha="right")
-    plt.yticks(rotation=0)
-    plt.tight_layout()
-    plt.savefig(f"{folder}/correlation_matrix.png")
-    #plt.show()
-
-
-    rain = np.array([
-        0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0024999999999999996, 0.0024999999999999996, 0.0024999999999999996, 0.0024999999999999996, 0.0024999999999999996, 0.0024999999999999996, 0.0024999999999999996, 0.0024999999999999996, 0.0024999999999999996, 0.0024999999999999996, 0.0024999999999999996, 0.0024999999999999996, 0.0024999999999999996, 0.0024999999999999996, 0.0024999999999999996, 0.0024999999999999996, 0.0024999999999999996, 0.0024999999999999996, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666, 0.0006666666666666666
-    ])
-
     rain_steps = np.arange(0, len(rain)*10, 10)
 
     fig, ax1 = plt.subplots(figsize=(12,6))
@@ -126,32 +108,3 @@ def stats_summary(folder, title):
 
     plt.savefig(f"{folder}/unsafe_roads_vs_rain.png")
     #plt.show()
-
-
-folder = "output/z_2xRescue"
-title = "2 times more rescuers"
-stats_summary(folder, title)
-
-folder = "output/z_3xRescue"
-title = "3 times more rescuers"
-stats_summary(folder, title)
-
-folder = "output/z_2xWater"
-title = "2 times more rainfall"
-stats_summary(folder, title)
-
-folder = "output/z_std"
-title = "Standard scenario"
-stats_summary(folder, title)
-
-folder = "output/z_d75f25"
-title = "75% agents are smart, 25% are followers"
-stats_summary(folder, title)
-
-folder = "output/z_d75r25"
-title = "75% agents are smart, 25% move randomly"
-stats_summary(folder, title)
-
-folder = "output/z_d75r125f125"
-title = "75% agents are smart, 12.5% move randomly, 12.5% are followers"
-stats_summary(folder, title)

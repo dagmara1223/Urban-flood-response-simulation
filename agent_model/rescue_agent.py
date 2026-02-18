@@ -1,7 +1,7 @@
 import mesa
 import numpy as np
 import networkx as nx
-from agent_model.citizens.citizen_agent import CitizenAgent, CitizenState
+from agent_model.citizen_agent import CitizenAgent, CitizenState
 
 class RescueState:
     """Enum-like class for rescue agent states."""
@@ -20,7 +20,7 @@ class RescueAgent(mesa.Agent):
         super().__init__(model)
         self.current_edge = (start_node, None)
         self.progress = 0.0
-        self.speed = np.random.normal(8.0, 1.0) * 60 # driving only, speed in m/s, 60 seconds per step
+        self.speed = np.random.normal(8.0, 1.0) * 60
         self.capacity = np.random.randint(2, 4)  # number of citizens that can be carried
         self.carrying = []
         self.target = None
@@ -37,7 +37,6 @@ class RescueAgent(mesa.Agent):
         if citizen.unique_id not in self.rescue_start_times:
             self.rescue_start_times[citizen.unique_id] = self.model.count
 
-        # Create a subgraph that only includes safe edges
         safe_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get("safe", "yes") == "yes"]
         subG = G.edge_subgraph(safe_edges).copy()
 
@@ -85,7 +84,6 @@ class RescueAgent(mesa.Agent):
                 self.path.pop(0)
                 self.progress = 0.0
 
-                # Synchronize positions of carried citizens
                 for c in self.carrying:
                     self.model.space.move_agent(c, next_node)
             else:
@@ -112,7 +110,6 @@ class RescueAgent(mesa.Agent):
                     self.model.stats["rescue_response_time"].append(evac_time_to_rescuer)
                     self.rescue_start_times[a.unique_id] = self.model.count
         if self.state == RescueState.CARRYING:
-            # Compute route to nearest safe location
             safe = min(
                 self.model.safety_spot,
                 key=lambda n: nx.shortest_path_length(

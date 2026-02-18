@@ -1,5 +1,5 @@
 import networkx as nx
-from agent_model.citizens.citizen_agent import CitizenAgent, CitizenState
+from agent_model.citizen_agent import CitizenAgent, CitizenState
 from agent_model.rescue_agent import RescueAgent, RescueState
 
 class CallCenterAgent:
