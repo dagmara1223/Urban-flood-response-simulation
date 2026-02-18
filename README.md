@@ -123,13 +123,24 @@ osmnx
 
 - Install:  <br>
 ```
-pip install -r requirements.txt
+conda env create -f environment.yml
+```
+
+- Activate: <br>
+```bash
+conda activate flood-simulation
 ```
 
 - Run: <br>
 ```
 python main.py
 ```
+
+- You can also run a selected scenario and number of steps: <br>
+```bash
+python main.py <scenario> <number_of_steps>
+```
+
 - You can enable/disable:<br>
 ```
 run_flood_simulation = True    
